@@ -224,6 +224,10 @@ Read only the document relevant to the current task. These files contain detaile
 <!-- BEGIN MANAGED: PROJECT-DOC-REFERENCES -->
 - `docs/operational-ontology_database_context.md` — Read for PostgreSQL schema, constraints, migration scope, indexes, and seed-data compatibility.
 - `docs/operational-ontology_ontology_implementation_context.md` — Read for ontology metadata, YAML structure, runtime contracts, handlers, permissions, and action rules.
+- `docs/ontology_permissions_implementation_context.md` — Read for shared authorization rules across objects, links, functions, actions, audit history, and AI tools.
+- `docs/ontology_api_design_context.md` — Read for API routes, request contracts, response shapes, pagination, and controller boundaries.
+- `docs/ontology_functions_implementation_context.md` — Read for read-only ontology function behavior, traversal logic, calculations, and handler testing boundaries.
+- `docs/ontology_actions_implementation_context.md` — Read for governed action execution, transactions, idempotency, audit rules, and action-handler contracts.
 - `docs/operational-ontology_lightweight_ontology_manager_implementation_context.md` — Read for read-only Ontology Manager APIs, UI behavior, validation views, and testing scope.
 <!-- END MANAGED: PROJECT-DOC-REFERENCES -->
 ---
@@ -486,4 +490,3 @@ Permissions control authority.
 Audit history creates accountability.
 AI uses approved capabilities without bypassing human control.
 ```
-
