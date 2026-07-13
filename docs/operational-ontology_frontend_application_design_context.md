@@ -10,7 +10,7 @@ This file does not redefine backend business logic or API contracts. Use these e
 
 ```text
 ontology_api_design_context.md
-BACKEND_IMPLEMENTATION_PLAN.md
+operational-ontology_backend_implementation_context.md
 SupplyGraph_Ontology_Implementation_Context.md
 SupplyGraph_Lightweight_Ontology_Manager_Implementation_Context.md
 ```

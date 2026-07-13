@@ -224,13 +224,14 @@ Read only the document relevant to the current task. These files contain detaile
 <!-- BEGIN MANAGED: PROJECT-DOC-REFERENCES -->
 - `docs/operational-ontology_database_context.md` -- Read for PostgreSQL schema, constraints, migration scope, indexes, and seed-data compatibility.
 - `docs/operational-ontology_ontology_implementation_context.md` -- Read for ontology metadata, YAML structure, runtime contracts, handlers, permissions, and action rules.
-- `docs/BACKEND_IMPLEMENTATION_PLAN.md` -- Read for FastAPI backend architecture, runtime layering, repositories, handlers, and backend testing boundaries.
+- `docs/operational-ontology_backend_implementation_context.md` -- Read for FastAPI backend architecture, runtime layering, repositories, handlers, and backend testing boundaries.
 - `docs/ontology_permissions_implementation_context.md` -- Read for shared authorization rules across objects, links, functions, actions, audit history, and AI tools.
 - `docs/ontology_api_design_context.md` -- Read for API routes, request contracts, response shapes, pagination, and controller boundaries.
 - `docs/ontology_functions_implementation_context.md` -- Read for read-only ontology function behavior, traversal logic, calculations, and handler testing boundaries.
 - `docs/ontology_actions_implementation_context.md` -- Read for governed action execution, transactions, idempotency, audit rules, and action-handler contracts.
 - `docs/operational-ontology_lightweight_ontology_manager_implementation_context.md` -- Read for read-only Ontology Manager APIs, UI behavior, validation views, and testing scope.
-- `docs/FRONTEND_APPLICATION_DESIGN_CONTEXT.md` -- Read for operational frontend architecture, route structure, state patterns, and governed-action UI boundaries.
+- `docs/operational-ontology_frontend_application_design_context.md` -- Read for operational frontend architecture, route structure, state patterns, and governed-action UI boundaries.
+- `docs/operational-ontology_ai_mcp_integration_design_context.md` -- Read for MCP server design, AI safety boundaries, assistant flows, and AI tool authorization.
 <!-- END MANAGED: PROJECT-DOC-REFERENCES -->
 ---
 
