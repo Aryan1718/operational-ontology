@@ -1,0 +1,20 @@
+@import url("https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-canvas text-ink antialiased;
+  background-image:
+    radial-gradient(circle at top left, rgba(164, 76, 36, 0.18), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(244, 239, 229, 0.95));
+}
+
+a {
+  @apply text-inherit no-underline;
+}

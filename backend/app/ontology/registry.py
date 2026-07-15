@@ -1,0 +1,1 @@
+"""Future immutable ontology registry."""
