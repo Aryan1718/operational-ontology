@@ -19,3 +19,9 @@ class HealthResponse(BaseModel):
     status: str
     service: str
     database: DatabaseHealth
+
+
+class DatabaseConnectionHealthResponse(BaseModel):
+    """Database connectivity health response."""
+
+    status: str

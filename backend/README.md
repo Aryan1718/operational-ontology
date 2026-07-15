@@ -1,12 +1,31 @@
 # Backend
 
-This backend skeleton provides:
+This backend foundation now provides:
 
 - a FastAPI application entrypoint;
 - router registration;
-- a `GET /health` endpoint;
-- environment-based configuration;
-- PostgreSQL connection settings and SQLAlchemy bootstrap;
-- placeholder module locations for ontology, actions, permissions, assistant, and MCP work.
+- `GET /health` and `GET /health/database`;
+- environment-based configuration through one settings object;
+- PostgreSQL connection settings and SQLAlchemy session management;
+- Alembic migration support for the operational schema;
+- operational SQLAlchemy models for the documented PostgreSQL tables.
 
-This phase does not implement operational models, migrations, seed data, ontology loading, functions, actions, permissions, audit logic, MCP tools, or assistant behavior.
+Local setup:
+
+```bash
+cp .env.example .env
+cd backend
+alembic upgrade head
+pytest
+```
+
+Docker-based local setup:
+
+```bash
+docker compose up -d postgres
+docker compose ps
+cd backend
+alembic upgrade head
+```
+
+This phase intentionally does not implement deterministic seed data, ontology loading, functions, actions, permissions, audit workflows, MCP tools, or assistant behavior.

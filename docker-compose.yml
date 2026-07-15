@@ -4,9 +4,9 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ontology_dev}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +24,12 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       BACKEND_HOST: 0.0.0.0
       BACKEND_PORT: 8000
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@postgres:5432/ontology_dev}
+      DATABASE_SCHEME: ${DATABASE_SCHEME:-postgresql+psycopg}
+      DATABASE_HOST: ${DATABASE_HOST:-postgres}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_NAME: ${DATABASE_NAME:-ontology_dev}
+      DATABASE_USER: ${DATABASE_USER:-postgres}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-change_me}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000}
     ports:
       - "8000:8000"

@@ -6,6 +6,7 @@ from urllib.parse import ParseResult, urlparse
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 
 class Settings(BaseSettings):
@@ -15,10 +16,13 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     backend_host: str = Field(default="0.0.0.0", alias="BACKEND_HOST")
     backend_port: int = Field(default=8000, alias="BACKEND_PORT")
-    database_url: str = Field(
-        default="postgresql+psycopg://postgres:postgres@localhost:5432/ontology_dev",
-        alias="DATABASE_URL",
-    )
+    database_scheme: str = Field(default="postgresql+psycopg", alias="DATABASE_SCHEME")
+    database_host: str = Field(default="localhost", alias="DATABASE_HOST")
+    database_port: int = Field(default=5432, alias="DATABASE_PORT")
+    database_name: str = Field(default="ontology_dev", alias="DATABASE_NAME")
+    database_user: str = Field(default="postgres", alias="DATABASE_USER")
+    database_password: str = Field(default="postgres", alias="DATABASE_PASSWORD")
+    database_url_override: str | None = Field(default=None, alias="DATABASE_URL")
     backend_cors_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:3000"],
         alias="BACKEND_CORS_ORIGINS",
@@ -44,6 +48,20 @@ class Settings(BaseSettings):
         )
 
     @property
+    def database_url(self) -> str:
+        """Return the complete database URL."""
+        if self.database_url_override:
+            return self.database_url_override
+        return URL.create(
+            drivername=self.database_scheme,
+            username=self.database_user,
+            password=self.database_password,
+            host=self.database_host,
+            port=self.database_port,
+            database=self.database_name,
+        ).render_as_string(hide_password=False)
+
+    @property
     def parsed_database_url(self) -> ParseResult:
         """Return a parsed database URL without exposing credentials."""
         return urlparse(self.database_url)
@@ -54,20 +72,20 @@ class Settings(BaseSettings):
         return self.parsed_database_url.scheme or None
 
     @property
-    def database_host(self) -> str | None:
-        """Return the configured database host."""
-        return self.parsed_database_url.hostname
+    def database_health_host(self) -> str | None:
+        """Return the configured database host for health output."""
+        return self.parsed_database_url.hostname or self.database_host
 
     @property
-    def database_port(self) -> int | None:
-        """Return the configured database port."""
-        return self.parsed_database_url.port
+    def database_health_port(self) -> int | None:
+        """Return the configured database port for health output."""
+        return self.parsed_database_url.port or self.database_port
 
     @property
-    def database_name(self) -> str | None:
-        """Return the configured database name."""
+    def database_health_name(self) -> str | None:
+        """Return the configured database name for health output."""
         path = self.parsed_database_url.path.lstrip("/")
-        return path or None
+        return path or self.database_name
 
 
 @lru_cache
