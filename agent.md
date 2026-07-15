@@ -223,6 +223,7 @@ Read only the document relevant to the current task. These files contain detaile
 
 <!-- BEGIN MANAGED: PROJECT-DOC-REFERENCES -->
 - `docs/operational-ontology_database_context.md` -- Read for PostgreSQL schema, constraints, migration scope, indexes, and seed-data compatibility.
+- `docs/deterministic_supply_chain_seed_data_implementation_context.md` -- Read for deterministic seed records, fixed dates, expected outcomes, and repeatable fixture behavior.
 - `docs/operational-ontology_ontology_implementation_context.md` -- Read for ontology metadata, YAML structure, runtime contracts, handlers, permissions, and action rules.
 - `docs/operational-ontology_backend_implementation_context.md` -- Read for FastAPI backend architecture, runtime layering, repositories, handlers, and backend testing boundaries.
 - `docs/ontology_permissions_implementation_context.md` -- Read for shared authorization rules across objects, links, functions, actions, audit history, and AI tools.
@@ -493,3 +494,5 @@ Permissions control authority.
 Audit history creates accountability.
 AI uses approved capabilities without bypassing human control.
 ```
+
+
