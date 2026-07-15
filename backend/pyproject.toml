@@ -44,3 +44,5 @@ python_version = "3.12"
 strict = true
 plugins = []
 exclude = ["migrations/versions"]
+[project.scripts]
+ontology-seed = "app.db.seed:main"

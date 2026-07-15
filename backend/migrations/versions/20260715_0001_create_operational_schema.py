@@ -219,6 +219,9 @@ def upgrade() -> None:
             name="fk_supplier_parts_supplier_id_suppliers",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_supplier_parts"),
+        sa.UniqueConstraint(
+            "supplier_id", "part_id", name="uq_supplier_parts_supplier_part"
+        ),
     )
     op.create_index("idx_supplier_parts_part_id", "supplier_parts", ["part_id"])
     op.create_index(
@@ -227,13 +230,6 @@ def upgrade() -> None:
         ["part_id", "is_primary_supplier"],
     )
     op.create_index("idx_supplier_parts_supplier_id", "supplier_parts", ["supplier_id"])
-    op.create_index(
-        "uq_supplier_parts_supplier_part",
-        "supplier_parts",
-        ["supplier_id", "part_id"],
-        unique=True,
-    )
-
     op.create_table(
         "product_bom_items",
         sa.Column(
@@ -264,6 +260,9 @@ def upgrade() -> None:
             name="fk_product_bom_items_product_id_products",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_product_bom_items"),
+        sa.UniqueConstraint(
+            "product_id", "part_id", name="uq_product_bom_items_product_part"
+        ),
     )
     op.create_index(
         "idx_product_bom_items_part_critical",
@@ -274,13 +273,6 @@ def upgrade() -> None:
     op.create_index(
         "idx_product_bom_items_product_id", "product_bom_items", ["product_id"]
     )
-    op.create_index(
-        "uq_product_bom_items_product_part",
-        "product_bom_items",
-        ["product_id", "part_id"],
-        unique=True,
-    )
-
     op.create_table(
         "inventory",
         sa.Column(
@@ -708,6 +700,12 @@ def upgrade() -> None:
             name="fk_risk_event_impacts_risk_event_id_risk_events",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_risk_event_impacts"),
+        sa.UniqueConstraint(
+            "risk_event_id",
+            "impacted_object_type",
+            "impacted_object_id",
+            name="uq_risk_event_impacts_event_object",
+        ),
     )
     op.create_index(
         "idx_risk_event_impacts_level", "risk_event_impacts", ["impact_level"]
@@ -720,13 +718,6 @@ def upgrade() -> None:
     op.create_index(
         "idx_risk_event_impacts_risk_event_id", "risk_event_impacts", ["risk_event_id"]
     )
-    op.create_index(
-        "uq_risk_event_impacts_event_object",
-        "risk_event_impacts",
-        ["risk_event_id", "impacted_object_type", "impacted_object_id"],
-        unique=True,
-    )
-
     op.create_table(
         "mitigation_plans",
         sa.Column(
@@ -878,6 +869,11 @@ def upgrade() -> None:
             name="fk_mitigation_plan_steps_target_warehouse_id_warehouses",
         ),
         sa.PrimaryKeyConstraint("id", name="pk_mitigation_plan_steps"),
+        sa.UniqueConstraint(
+            "mitigation_plan_id",
+            "step_order",
+            name="uq_mitigation_plan_steps_plan_step_order",
+        ),
     )
     op.create_index(
         "idx_mitigation_plan_steps_action_type",
@@ -902,13 +898,6 @@ def upgrade() -> None:
         "mitigation_plan_steps",
         ["target_warehouse_id"],
     )
-    op.create_index(
-        "uq_mitigation_plan_steps_plan_step_order",
-        "mitigation_plan_steps",
-        ["mitigation_plan_id", "step_order"],
-        unique=True,
-    )
-
     op.create_table(
         "audit_logs",
         sa.Column(
@@ -947,9 +936,6 @@ def downgrade() -> None:
     op.drop_table("audit_logs")
 
     op.drop_index(
-        "uq_mitigation_plan_steps_plan_step_order", table_name="mitigation_plan_steps"
-    )
-    op.drop_index(
         "idx_mitigation_plan_steps_target_warehouse_id",
         table_name="mitigation_plan_steps",
     )
@@ -975,7 +961,6 @@ def downgrade() -> None:
     op.drop_index("idx_mitigation_plans_approved_by", table_name="mitigation_plans")
     op.drop_table("mitigation_plans")
 
-    op.drop_index("uq_risk_event_impacts_event_object", table_name="risk_event_impacts")
     op.drop_index(
         "idx_risk_event_impacts_risk_event_id", table_name="risk_event_impacts"
     )
@@ -1033,13 +1018,11 @@ def downgrade() -> None:
     op.drop_index("idx_inventory_item_type", table_name="inventory")
     op.drop_table("inventory")
 
-    op.drop_index("uq_product_bom_items_product_part", table_name="product_bom_items")
     op.drop_index("idx_product_bom_items_product_id", table_name="product_bom_items")
     op.drop_index("idx_product_bom_items_part_id", table_name="product_bom_items")
     op.drop_index("idx_product_bom_items_part_critical", table_name="product_bom_items")
     op.drop_table("product_bom_items")
 
-    op.drop_index("uq_supplier_parts_supplier_part", table_name="supplier_parts")
     op.drop_index("idx_supplier_parts_supplier_id", table_name="supplier_parts")
     op.drop_index("idx_supplier_parts_primary", table_name="supplier_parts")
     op.drop_index("idx_supplier_parts_part_id", table_name="supplier_parts")

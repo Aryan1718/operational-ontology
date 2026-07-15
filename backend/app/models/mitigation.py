@@ -8,7 +8,15 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Numeric, Text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -88,6 +96,11 @@ class MitigationPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class MitigationPlanStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "mitigation_plan_steps"
     __table_args__ = (
+        UniqueConstraint(
+            "mitigation_plan_id",
+            "step_order",
+            name="uq_mitigation_plan_steps_plan_step_order",
+        ),
         CheckConstraint(
             "step_order > 0", name="mitigation_plan_steps_step_order_positive"
         ),
@@ -156,10 +169,3 @@ class MitigationPlanStep(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="mitigation_plan_steps"
     )
 
-
-Index(
-    "uq_mitigation_plan_steps_plan_step_order",
-    MitigationPlanStep.mitigation_plan_id,
-    MitigationPlanStep.step_order,
-    unique=True,
-)

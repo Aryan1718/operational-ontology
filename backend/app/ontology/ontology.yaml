@@ -1,2 +1,2125 @@
-# Ontology metadata will be implemented from the ontology context documents
-# in a later task. Do not add runtime definitions in this skeleton phase.
+ontology:
+  key: operationalOntology
+  displayName: Operational Ontology
+  description: >
+    Declarative ontology metadata for supply-chain operational objects and
+    stored relationships backed by PostgreSQL operational tables.
+  version: 1.0.0
+  metadataFormatVersion: 1.0.0
+
+settings:
+  defaultPropertyReadOnly: true
+
+enums:
+  supplierStatus:
+    - active
+    - inactive
+    - blocked
+    - delayed
+  partCriticality:
+    - low
+    - medium
+    - high
+    - critical
+  partStatus:
+    - active
+    - inactive
+    - discontinued
+  supplierPartStatus:
+    - active
+    - inactive
+    - blocked
+  productStatus:
+    - active
+    - inactive
+    - discontinued
+  warehouseStatus:
+    - active
+    - inactive
+    - blocked
+  inventoryItemType:
+    - part
+    - product
+  customerOrderPriority:
+    - low
+    - normal
+    - high
+    - critical
+  customerOrderStatus:
+    - open
+    - allocated
+    - partially_allocated
+    - shipped
+    - delivered
+    - delayed
+    - cancelled
+  shipmentStatus:
+    - planned
+    - allocated
+    - in_transit
+    - delivered
+    - delayed
+    - cancelled
+  purchaseOrderStatus:
+    - draft
+    - open
+    - confirmed
+    - partially_received
+    - received
+    - delayed
+    - cancelled
+  riskType:
+    - supplier_delay
+    - part_shortage
+    - warehouse_outage
+    - shipment_delay
+    - quality_issue
+    - demand_spike
+  riskSeverity:
+    - low
+    - medium
+    - high
+    - critical
+  riskEventStatus:
+    - open
+    - investigating
+    - mitigating
+    - resolved
+    - cancelled
+  mitigationPlanType:
+    - reallocate_inventory
+    - expedite_purchase_order
+    - use_alternate_supplier
+    - split_shipment
+    - delay_order
+  mitigationPlanStatus:
+    - draft
+    - proposed
+    - approved
+    - rejected
+    - executing
+    - executed
+    - cancelled
+  mitigationStepActionType:
+    - reallocate_inventory
+    - expedite_purchase_order
+    - use_alternate_supplier
+    - split_shipment
+    - update_shipment_date
+    - delay_order
+  mitigationStepStatus:
+    - pending
+    - approved
+    - executing
+    - executed
+    - failed
+    - cancelled
+
+objectTypes:
+  Supplier:
+    key: Supplier
+    displayName: Supplier
+    pluralDisplayName: Suppliers
+    description: Company that supplies one or more parts.
+    source:
+      table: suppliers
+      primaryKeyColumn: id
+    primaryKeyProperty: supplierId
+    titleProperty: name
+    readOnly: true
+    storedProperties:
+      supplierId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      supplierCode:
+        sourceColumn: supplier_code
+        type: string
+        required: true
+        readOnly: true
+      name:
+        sourceColumn: name
+        type: string
+        required: true
+        readOnly: true
+      country:
+        sourceColumn: country
+        type: string
+        required: false
+        readOnly: true
+      region:
+        sourceColumn: region
+        type: string
+        required: false
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: supplierStatus
+        required: true
+        readOnly: true
+      reliabilityScore:
+        sourceColumn: reliability_score
+        type: number
+        required: false
+        readOnly: true
+      defaultLeadTimeDays:
+        sourceColumn: default_lead_time_days
+        type: integer
+        required: false
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - supplierToSupplierParts
+      - supplierToPurchaseOrders
+      - supplierToRiskEvents
+      - supplierSuppliesParts
+
+  Part:
+    key: Part
+    displayName: Part
+    pluralDisplayName: Parts
+    description: Component supplied by suppliers and used in products.
+    source:
+      table: parts
+      primaryKeyColumn: id
+    primaryKeyProperty: partId
+    titleProperty: name
+    readOnly: true
+    storedProperties:
+      partId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      partCode:
+        sourceColumn: part_code
+        type: string
+        required: true
+        readOnly: true
+      name:
+        sourceColumn: name
+        type: string
+        required: true
+        readOnly: true
+      category:
+        sourceColumn: category
+        type: string
+        required: false
+        readOnly: true
+      criticality:
+        sourceColumn: criticality
+        type: enum
+        enum: partCriticality
+        required: true
+        readOnly: true
+      unitCost:
+        sourceColumn: unit_cost
+        type: currency
+        required: false
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: partStatus
+        required: true
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - partToSupplierParts
+      - partToProductPartRequirements
+      - partToInventoryPositions
+      - partToPurchaseOrderLines
+      - partToRiskEvents
+      - partUsedInProducts
+
+  Product:
+    key: Product
+    displayName: Product
+    pluralDisplayName: Products
+    description: Finished product sold through customer orders.
+    source:
+      table: products
+      primaryKeyColumn: id
+    primaryKeyProperty: productId
+    titleProperty: name
+    readOnly: true
+    storedProperties:
+      productId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      productCode:
+        sourceColumn: product_code
+        type: string
+        required: true
+        readOnly: true
+      name:
+        sourceColumn: name
+        type: string
+        required: true
+        readOnly: true
+      category:
+        sourceColumn: category
+        type: string
+        required: false
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: productStatus
+        required: true
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - productToProductPartRequirements
+      - productToOrderLines
+      - productIncludedInCustomerOrders
+
+  Warehouse:
+    key: Warehouse
+    displayName: Warehouse
+    pluralDisplayName: Warehouses
+    description: Storage or fulfillment location.
+    source:
+      table: warehouses
+      primaryKeyColumn: id
+    primaryKeyProperty: warehouseId
+    titleProperty: name
+    readOnly: true
+    storedProperties:
+      warehouseId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      warehouseCode:
+        sourceColumn: warehouse_code
+        type: string
+        required: true
+        readOnly: true
+      name:
+        sourceColumn: name
+        type: string
+        required: true
+        readOnly: true
+      city:
+        sourceColumn: city
+        type: string
+        required: false
+        readOnly: true
+      state:
+        sourceColumn: state
+        type: string
+        required: false
+        readOnly: true
+      country:
+        sourceColumn: country
+        type: string
+        required: false
+        readOnly: true
+      region:
+        sourceColumn: region
+        type: string
+        required: false
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: warehouseStatus
+        required: true
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - warehouseToInventoryPositions
+      - warehouseToShipments
+      - warehouseStoresParts
+      - warehouseToInventoryTransferSources
+      - warehouseToInventoryTransferDestinations
+
+  SupplierPart:
+    key: SupplierPart
+    displayName: Supplier Part
+    pluralDisplayName: Supplier Parts
+    description: Stored supplier-to-part supply relationship.
+    source:
+      table: supplier_parts
+      primaryKeyColumn: id
+    primaryKeyProperty: supplierPartId
+    titleProperty: supplierPartId
+    readOnly: true
+    storedProperties:
+      supplierPartId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      supplierId:
+        sourceColumn: supplier_id
+        type: string
+        required: true
+        readOnly: true
+      partId:
+        sourceColumn: part_id
+        type: string
+        required: true
+        readOnly: true
+      supplierPartCode:
+        sourceColumn: supplier_part_code
+        type: string
+        required: false
+        readOnly: true
+      isPrimarySupplier:
+        sourceColumn: is_primary_supplier
+        type: boolean
+        required: true
+        readOnly: true
+      leadTimeDays:
+        sourceColumn: lead_time_days
+        type: integer
+        required: false
+        readOnly: true
+      minimumOrderQuantity:
+        sourceColumn: minimum_order_quantity
+        type: number
+        required: false
+        readOnly: true
+      unitCost:
+        sourceColumn: unit_cost
+        type: currency
+        required: false
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: supplierPartStatus
+        required: true
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - supplierPartToSupplier
+      - supplierPartToPart
+
+  ProductPartRequirement:
+    key: ProductPartRequirement
+    displayName: Product Part Requirement
+    pluralDisplayName: Product Part Requirements
+    description: One bill-of-materials requirement linking a product to a part.
+    source:
+      table: product_bom_items
+      primaryKeyColumn: id
+    primaryKeyProperty: productPartRequirementId
+    titleProperty: productPartRequirementId
+    readOnly: true
+    storedProperties:
+      productPartRequirementId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      productId:
+        sourceColumn: product_id
+        type: string
+        required: true
+        readOnly: true
+      partId:
+        sourceColumn: part_id
+        type: string
+        required: true
+        readOnly: true
+      quantityRequired:
+        sourceColumn: quantity_required
+        type: number
+        required: true
+        readOnly: true
+      isCritical:
+        sourceColumn: is_critical
+        type: boolean
+        required: true
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - productPartRequirementToProduct
+      - productPartRequirementToPart
+
+  InventoryPosition:
+    key: InventoryPosition
+    displayName: Inventory Position
+    pluralDisplayName: Inventory Positions
+    description: Part inventory stored at a warehouse.
+    source:
+      table: inventory
+      primaryKeyColumn: id
+      rowFilter:
+        item_type: part
+    primaryKeyProperty: inventoryPositionId
+    titleProperty: inventoryPositionId
+    readOnly: true
+    storedProperties:
+      inventoryPositionId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      warehouseId:
+        sourceColumn: warehouse_id
+        type: string
+        required: true
+        readOnly: true
+      itemType:
+        sourceColumn: item_type
+        type: enum
+        enum: inventoryItemType
+        required: true
+        readOnly: true
+      partId:
+        sourceColumn: part_id
+        type: string
+        required: true
+        readOnly: true
+      onHandQuantity:
+        sourceColumn: on_hand_quantity
+        type: number
+        required: true
+        readOnly: true
+      reservedQuantity:
+        sourceColumn: reserved_quantity
+        type: number
+        required: true
+        readOnly: true
+      safetyStockQuantity:
+        sourceColumn: safety_stock_quantity
+        type: number
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - inventoryPositionToWarehouse
+      - inventoryPositionToPart
+
+  CustomerOrder:
+    key: CustomerOrder
+    displayName: Customer Order
+    pluralDisplayName: Customer Orders
+    description: Customer demand record for one or more products.
+    source:
+      table: customer_orders
+      primaryKeyColumn: id
+    primaryKeyProperty: customerOrderId
+    titleProperty: orderCode
+    readOnly: true
+    storedProperties:
+      customerOrderId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      orderCode:
+        sourceColumn: order_code
+        type: string
+        required: true
+        readOnly: true
+      customerName:
+        sourceColumn: customer_name
+        type: string
+        required: true
+        readOnly: true
+      priority:
+        sourceColumn: priority
+        type: enum
+        enum: customerOrderPriority
+        required: true
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: customerOrderStatus
+        required: true
+        readOnly: true
+      requestedDeliveryDate:
+        sourceColumn: requested_delivery_date
+        type: date
+        required: true
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - customerOrderToOrderLines
+      - customerOrderToShipments
+
+  OrderLine:
+    key: OrderLine
+    displayName: Order Line
+    pluralDisplayName: Order Lines
+    description: Product demand row within a customer order.
+    source:
+      table: customer_order_items
+      primaryKeyColumn: id
+    primaryKeyProperty: orderLineId
+    titleProperty: orderLineId
+    readOnly: true
+    storedProperties:
+      orderLineId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      orderId:
+        sourceColumn: order_id
+        type: string
+        required: true
+        readOnly: true
+      productId:
+        sourceColumn: product_id
+        type: string
+        required: true
+        readOnly: true
+      quantityOrdered:
+        sourceColumn: quantity_ordered
+        type: number
+        required: true
+        readOnly: true
+      quantityAllocated:
+        sourceColumn: quantity_allocated
+        type: number
+        required: true
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - orderLineToCustomerOrder
+      - orderLineToProduct
+
+  Shipment:
+    key: Shipment
+    displayName: Shipment
+    pluralDisplayName: Shipments
+    description: Shipment record fulfilling a customer order from a warehouse.
+    source:
+      table: shipments
+      primaryKeyColumn: id
+    primaryKeyProperty: shipmentId
+    titleProperty: shipmentCode
+    readOnly: true
+    storedProperties:
+      shipmentId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      shipmentCode:
+        sourceColumn: shipment_code
+        type: string
+        required: true
+        readOnly: true
+      orderId:
+        sourceColumn: order_id
+        type: string
+        required: true
+        readOnly: true
+      warehouseId:
+        sourceColumn: warehouse_id
+        type: string
+        required: false
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: shipmentStatus
+        required: true
+        readOnly: true
+      carrier:
+        sourceColumn: carrier
+        type: string
+        required: false
+        readOnly: true
+      trackingNumber:
+        sourceColumn: tracking_number
+        type: string
+        required: false
+        readOnly: true
+      plannedShipDate:
+        sourceColumn: planned_ship_date
+        type: date
+        required: false
+        readOnly: true
+      actualShipDate:
+        sourceColumn: actual_ship_date
+        type: date
+        required: false
+        readOnly: true
+      plannedDeliveryDate:
+        sourceColumn: planned_delivery_date
+        type: date
+        required: false
+        readOnly: true
+      actualDeliveryDate:
+        sourceColumn: actual_delivery_date
+        type: date
+        required: false
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - shipmentToCustomerOrder
+      - shipmentToWarehouse
+
+  PurchaseOrder:
+    key: PurchaseOrder
+    displayName: Purchase Order
+    pluralDisplayName: Purchase Orders
+    description: Order placed with a supplier for one or more parts.
+    source:
+      table: purchase_orders
+      primaryKeyColumn: id
+    primaryKeyProperty: purchaseOrderId
+    titleProperty: purchaseOrderCode
+    readOnly: true
+    storedProperties:
+      purchaseOrderId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      purchaseOrderCode:
+        sourceColumn: purchase_order_code
+        type: string
+        required: true
+        readOnly: true
+      supplierId:
+        sourceColumn: supplier_id
+        type: string
+        required: true
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: purchaseOrderStatus
+        required: true
+        readOnly: true
+      orderDate:
+        sourceColumn: order_date
+        type: date
+        required: true
+        readOnly: true
+      expectedDeliveryDate:
+        sourceColumn: expected_delivery_date
+        type: date
+        required: false
+        readOnly: true
+      actualDeliveryDate:
+        sourceColumn: actual_delivery_date
+        type: date
+        required: false
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - purchaseOrderToSupplier
+      - purchaseOrderToPurchaseOrderLines
+
+  PurchaseOrderLine:
+    key: PurchaseOrderLine
+    displayName: Purchase Order Line
+    pluralDisplayName: Purchase Order Lines
+    description: Part quantity row within a purchase order.
+    source:
+      table: purchase_order_items
+      primaryKeyColumn: id
+    primaryKeyProperty: purchaseOrderLineId
+    titleProperty: purchaseOrderLineId
+    readOnly: true
+    storedProperties:
+      purchaseOrderLineId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      purchaseOrderId:
+        sourceColumn: purchase_order_id
+        type: string
+        required: true
+        readOnly: true
+      partId:
+        sourceColumn: part_id
+        type: string
+        required: true
+        readOnly: true
+      quantityOrdered:
+        sourceColumn: quantity_ordered
+        type: number
+        required: true
+        readOnly: true
+      quantityReceived:
+        sourceColumn: quantity_received
+        type: number
+        required: true
+        readOnly: true
+      unitCost:
+        sourceColumn: unit_cost
+        type: currency
+        required: false
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - purchaseOrderLineToPurchaseOrder
+      - purchaseOrderLineToPart
+
+  RiskEvent:
+    key: RiskEvent
+    displayName: Risk Event
+    pluralDisplayName: Risk Events
+    description: Operational disruption record that may reference supplier, part, warehouse, or shipment.
+    source:
+      table: risk_events
+      primaryKeyColumn: id
+    primaryKeyProperty: riskEventId
+    titleProperty: riskCode
+    readOnly: true
+    storedProperties:
+      riskEventId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      riskCode:
+        sourceColumn: risk_code
+        type: string
+        required: true
+        readOnly: true
+      riskType:
+        sourceColumn: risk_type
+        type: enum
+        enum: riskType
+        required: true
+        readOnly: true
+      severity:
+        sourceColumn: severity
+        type: enum
+        enum: riskSeverity
+        required: true
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: riskEventStatus
+        required: true
+        readOnly: true
+      supplierId:
+        sourceColumn: supplier_id
+        type: string
+        required: false
+        readOnly: true
+      partId:
+        sourceColumn: part_id
+        type: string
+        required: false
+        readOnly: true
+      warehouseId:
+        sourceColumn: warehouse_id
+        type: string
+        required: false
+        readOnly: true
+      shipmentId:
+        sourceColumn: shipment_id
+        type: string
+        required: false
+        readOnly: true
+      delayDays:
+        sourceColumn: delay_days
+        type: integer
+        required: false
+        readOnly: true
+      description:
+        sourceColumn: description
+        type: string
+        required: false
+        readOnly: true
+      detectedAt:
+        sourceColumn: detected_at
+        type: datetime
+        required: true
+        readOnly: true
+      resolvedAt:
+        sourceColumn: resolved_at
+        type: datetime
+        required: false
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - riskEventToSupplier
+      - riskEventToPart
+      - riskEventToWarehouse
+      - riskEventToShipment
+      - riskEventToMitigationPlans
+
+  MitigationPlan:
+    key: MitigationPlan
+    displayName: Mitigation Plan
+    pluralDisplayName: Mitigation Plans
+    description: Proposed or approved mitigation response for a risk event.
+    source:
+      table: mitigation_plans
+      primaryKeyColumn: id
+    primaryKeyProperty: mitigationPlanId
+    titleProperty: mitigationCode
+    readOnly: true
+    storedProperties:
+      mitigationPlanId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      mitigationCode:
+        sourceColumn: mitigation_code
+        type: string
+        required: true
+        readOnly: true
+      riskEventId:
+        sourceColumn: risk_event_id
+        type: string
+        required: true
+        readOnly: true
+      planType:
+        sourceColumn: plan_type
+        type: enum
+        enum: mitigationPlanType
+        required: true
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: mitigationPlanStatus
+        required: true
+        readOnly: true
+      recommendedAction:
+        sourceColumn: recommended_action
+        type: string
+        required: true
+        readOnly: true
+      explanation:
+        sourceColumn: explanation
+        type: string
+        required: false
+        readOnly: true
+      estimatedCost:
+        sourceColumn: estimated_cost
+        type: currency
+        required: false
+        readOnly: true
+      estimatedDelayReductionDays:
+        sourceColumn: estimated_delay_reduction_days
+        type: integer
+        required: false
+        readOnly: true
+      confidenceScore:
+        sourceColumn: confidence_score
+        type: number
+        required: false
+        readOnly: true
+      createdBy:
+        sourceColumn: created_by
+        type: string
+        required: false
+        readOnly: true
+      approvedBy:
+        sourceColumn: approved_by
+        type: string
+        required: false
+        readOnly: true
+      approvedAt:
+        sourceColumn: approved_at
+        type: datetime
+        required: false
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - mitigationPlanToRiskEvent
+      - mitigationPlanToMitigationSteps
+      - mitigationPlanToInventoryTransfers
+
+  MitigationStep:
+    key: MitigationStep
+    displayName: Mitigation Step
+    pluralDisplayName: Mitigation Steps
+    description: Ordered mitigation step attached to a mitigation plan.
+    source:
+      table: mitigation_plan_steps
+      primaryKeyColumn: id
+    primaryKeyProperty: mitigationStepId
+    titleProperty: mitigationStepId
+    readOnly: true
+    storedProperties:
+      mitigationStepId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      mitigationPlanId:
+        sourceColumn: mitigation_plan_id
+        type: string
+        required: true
+        readOnly: true
+      stepOrder:
+        sourceColumn: step_order
+        type: integer
+        required: true
+        readOnly: true
+      actionType:
+        sourceColumn: action_type
+        type: enum
+        enum: mitigationStepActionType
+        required: true
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: mitigationStepStatus
+        required: true
+        readOnly: true
+      sourceWarehouseId:
+        sourceColumn: source_warehouse_id
+        type: string
+        required: false
+        readOnly: true
+      targetWarehouseId:
+        sourceColumn: target_warehouse_id
+        type: string
+        required: false
+        readOnly: true
+      supplierId:
+        sourceColumn: supplier_id
+        type: string
+        required: false
+        readOnly: true
+      purchaseOrderId:
+        sourceColumn: purchase_order_id
+        type: string
+        required: false
+        readOnly: true
+      shipmentId:
+        sourceColumn: shipment_id
+        type: string
+        required: false
+        readOnly: true
+      partId:
+        sourceColumn: part_id
+        type: string
+        required: false
+        readOnly: true
+      productId:
+        sourceColumn: product_id
+        type: string
+        required: false
+        readOnly: true
+      quantity:
+        sourceColumn: quantity
+        type: number
+        required: false
+        readOnly: true
+      notes:
+        sourceColumn: notes
+        type: string
+        required: false
+        readOnly: true
+      executedAt:
+        sourceColumn: executed_at
+        type: datetime
+        required: false
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - mitigationStepToMitigationPlan
+      - mitigationStepToSupplier
+      - mitigationStepToPurchaseOrder
+      - mitigationStepToShipment
+      - mitigationStepToPart
+      - mitigationStepToProduct
+      - mitigationStepToSourceWarehouse
+      - mitigationStepToTargetWarehouse
+
+  InventoryTransfer:
+    key: InventoryTransfer
+    displayName: Inventory Transfer
+    pluralDisplayName: Inventory Transfers
+    description: >
+      Reallocation-focused mitigation step rows represented declaratively as
+      transfer records until a dedicated inventory_transfers table exists.
+    source:
+      table: mitigation_plan_steps
+      primaryKeyColumn: id
+      rowFilter:
+        action_type: reallocate_inventory
+    primaryKeyProperty: inventoryTransferId
+    titleProperty: inventoryTransferId
+    readOnly: true
+    storedProperties:
+      inventoryTransferId:
+        sourceColumn: id
+        type: string
+        required: true
+        readOnly: true
+      mitigationPlanId:
+        sourceColumn: mitigation_plan_id
+        type: string
+        required: true
+        readOnly: true
+      actionType:
+        sourceColumn: action_type
+        type: enum
+        enum: mitigationStepActionType
+        required: true
+        readOnly: true
+      status:
+        sourceColumn: status
+        type: enum
+        enum: mitigationStepStatus
+        required: true
+        readOnly: true
+      sourceWarehouseId:
+        sourceColumn: source_warehouse_id
+        type: string
+        required: false
+        readOnly: true
+      targetWarehouseId:
+        sourceColumn: target_warehouse_id
+        type: string
+        required: false
+        readOnly: true
+      partId:
+        sourceColumn: part_id
+        type: string
+        required: false
+        readOnly: true
+      quantity:
+        sourceColumn: quantity
+        type: number
+        required: false
+        readOnly: true
+      notes:
+        sourceColumn: notes
+        type: string
+        required: false
+        readOnly: true
+      executedAt:
+        sourceColumn: executed_at
+        type: datetime
+        required: false
+        readOnly: true
+      createdAt:
+        sourceColumn: created_at
+        type: datetime
+        required: true
+        readOnly: true
+      updatedAt:
+        sourceColumn: updated_at
+        type: datetime
+        required: true
+        readOnly: true
+    links:
+      - inventoryTransferToMitigationPlan
+      - inventoryTransferToPart
+      - inventoryTransferToSourceWarehouse
+      - inventoryTransferToDestinationWarehouse
+
+linkTypes:
+  supplierToSupplierParts:
+    key: supplierToSupplierParts
+    displayName: Supplier Parts
+    description: Supplier to supplier-part rows through supplier_parts.supplier_id.
+    kind: stored
+    sourceObjectType: Supplier
+    targetObjectType: SupplierPart
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: supplierId
+    targetJoinProperty: supplierId
+    storage:
+      table: supplier_parts
+      sourceColumn: supplier_id
+    inverseLinkKey: supplierPartToSupplier
+
+  supplierPartToSupplier:
+    key: supplierPartToSupplier
+    displayName: Supplier
+    description: Supplier-part row to its supplier.
+    kind: stored
+    sourceObjectType: SupplierPart
+    targetObjectType: Supplier
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: supplierId
+    targetJoinProperty: supplierId
+    storage:
+      table: supplier_parts
+      sourceColumn: supplier_id
+    inverseLinkKey: supplierToSupplierParts
+
+  supplierPartToPart:
+    key: supplierPartToPart
+    displayName: Part
+    description: Supplier-part row to its part.
+    kind: stored
+    sourceObjectType: SupplierPart
+    targetObjectType: Part
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: supplier_parts
+      sourceColumn: part_id
+    inverseLinkKey: partToSupplierParts
+
+  partToSupplierParts:
+    key: partToSupplierParts
+    displayName: Supplier Parts
+    description: Part to supplier-part rows through supplier_parts.part_id.
+    kind: stored
+    sourceObjectType: Part
+    targetObjectType: SupplierPart
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: supplier_parts
+      sourceColumn: part_id
+    inverseLinkKey: supplierPartToPart
+
+  productToProductPartRequirements:
+    key: productToProductPartRequirements
+    displayName: Product Part Requirements
+    description: Product to bill-of-material rows through product_bom_items.product_id.
+    kind: stored
+    sourceObjectType: Product
+    targetObjectType: ProductPartRequirement
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: productId
+    targetJoinProperty: productId
+    storage:
+      table: product_bom_items
+      sourceColumn: product_id
+    inverseLinkKey: productPartRequirementToProduct
+
+  productPartRequirementToProduct:
+    key: productPartRequirementToProduct
+    displayName: Product
+    description: Bill-of-material row to its product.
+    kind: stored
+    sourceObjectType: ProductPartRequirement
+    targetObjectType: Product
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: productId
+    targetJoinProperty: productId
+    storage:
+      table: product_bom_items
+      sourceColumn: product_id
+    inverseLinkKey: productToProductPartRequirements
+
+  partToProductPartRequirements:
+    key: partToProductPartRequirements
+    displayName: Product Part Requirements
+    description: Part to bill-of-material rows through product_bom_items.part_id.
+    kind: stored
+    sourceObjectType: Part
+    targetObjectType: ProductPartRequirement
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: product_bom_items
+      sourceColumn: part_id
+    inverseLinkKey: productPartRequirementToPart
+
+  productPartRequirementToPart:
+    key: productPartRequirementToPart
+    displayName: Part
+    description: Bill-of-material row to its required part.
+    kind: stored
+    sourceObjectType: ProductPartRequirement
+    targetObjectType: Part
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: product_bom_items
+      sourceColumn: part_id
+    inverseLinkKey: partToProductPartRequirements
+
+  warehouseToInventoryPositions:
+    key: warehouseToInventoryPositions
+    displayName: Inventory Positions
+    description: Warehouse to part inventory rows through inventory.warehouse_id.
+    kind: stored
+    sourceObjectType: Warehouse
+    targetObjectType: InventoryPosition
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: warehouseId
+    targetJoinProperty: warehouseId
+    storage:
+      table: inventory
+      sourceColumn: warehouse_id
+      rowFilter:
+        item_type: part
+    inverseLinkKey: inventoryPositionToWarehouse
+
+  inventoryPositionToWarehouse:
+    key: inventoryPositionToWarehouse
+    displayName: Warehouse
+    description: Inventory position to its warehouse.
+    kind: stored
+    sourceObjectType: InventoryPosition
+    targetObjectType: Warehouse
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: warehouseId
+    targetJoinProperty: warehouseId
+    storage:
+      table: inventory
+      sourceColumn: warehouse_id
+      rowFilter:
+        item_type: part
+    inverseLinkKey: warehouseToInventoryPositions
+
+  inventoryPositionToPart:
+    key: inventoryPositionToPart
+    displayName: Part
+    description: Inventory position to its stocked part.
+    kind: stored
+    sourceObjectType: InventoryPosition
+    targetObjectType: Part
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: inventory
+      sourceColumn: part_id
+      rowFilter:
+        item_type: part
+    inverseLinkKey: partToInventoryPositions
+
+  partToInventoryPositions:
+    key: partToInventoryPositions
+    displayName: Inventory Positions
+    description: Part to part inventory rows through inventory.part_id.
+    kind: stored
+    sourceObjectType: Part
+    targetObjectType: InventoryPosition
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: inventory
+      sourceColumn: part_id
+      rowFilter:
+        item_type: part
+    inverseLinkKey: inventoryPositionToPart
+
+  customerOrderToOrderLines:
+    key: customerOrderToOrderLines
+    displayName: Order Lines
+    description: Customer order to order-line rows through customer_order_items.order_id.
+    kind: stored
+    sourceObjectType: CustomerOrder
+    targetObjectType: OrderLine
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: customerOrderId
+    targetJoinProperty: orderId
+    storage:
+      table: customer_order_items
+      sourceColumn: order_id
+    inverseLinkKey: orderLineToCustomerOrder
+
+  orderLineToCustomerOrder:
+    key: orderLineToCustomerOrder
+    displayName: Customer Order
+    description: Order line to its customer order.
+    kind: stored
+    sourceObjectType: OrderLine
+    targetObjectType: CustomerOrder
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: orderId
+    targetJoinProperty: customerOrderId
+    storage:
+      table: customer_order_items
+      sourceColumn: order_id
+    inverseLinkKey: customerOrderToOrderLines
+
+  orderLineToProduct:
+    key: orderLineToProduct
+    displayName: Product
+    description: Order line to its product.
+    kind: stored
+    sourceObjectType: OrderLine
+    targetObjectType: Product
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: productId
+    targetJoinProperty: productId
+    storage:
+      table: customer_order_items
+      sourceColumn: product_id
+    inverseLinkKey: productToOrderLines
+
+  productToOrderLines:
+    key: productToOrderLines
+    displayName: Order Lines
+    description: Product to order-line rows through customer_order_items.product_id.
+    kind: stored
+    sourceObjectType: Product
+    targetObjectType: OrderLine
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: productId
+    targetJoinProperty: productId
+    storage:
+      table: customer_order_items
+      sourceColumn: product_id
+    inverseLinkKey: orderLineToProduct
+
+  customerOrderToShipments:
+    key: customerOrderToShipments
+    displayName: Shipments
+    description: Customer order to shipment rows through shipments.order_id.
+    kind: stored
+    sourceObjectType: CustomerOrder
+    targetObjectType: Shipment
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: customerOrderId
+    targetJoinProperty: orderId
+    storage:
+      table: shipments
+      sourceColumn: order_id
+    inverseLinkKey: shipmentToCustomerOrder
+
+  shipmentToCustomerOrder:
+    key: shipmentToCustomerOrder
+    displayName: Customer Order
+    description: Shipment to its customer order.
+    kind: stored
+    sourceObjectType: Shipment
+    targetObjectType: CustomerOrder
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: orderId
+    targetJoinProperty: customerOrderId
+    storage:
+      table: shipments
+      sourceColumn: order_id
+    inverseLinkKey: customerOrderToShipments
+
+  shipmentToWarehouse:
+    key: shipmentToWarehouse
+    displayName: Warehouse
+    description: Shipment to its warehouse.
+    kind: stored
+    sourceObjectType: Shipment
+    targetObjectType: Warehouse
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: warehouseId
+    targetJoinProperty: warehouseId
+    storage:
+      table: shipments
+      sourceColumn: warehouse_id
+    inverseLinkKey: warehouseToShipments
+
+  warehouseToShipments:
+    key: warehouseToShipments
+    displayName: Shipments
+    description: Warehouse to shipment rows through shipments.warehouse_id.
+    kind: stored
+    sourceObjectType: Warehouse
+    targetObjectType: Shipment
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: warehouseId
+    targetJoinProperty: warehouseId
+    storage:
+      table: shipments
+      sourceColumn: warehouse_id
+    inverseLinkKey: shipmentToWarehouse
+
+  supplierToPurchaseOrders:
+    key: supplierToPurchaseOrders
+    displayName: Purchase Orders
+    description: Supplier to purchase-order rows through purchase_orders.supplier_id.
+    kind: stored
+    sourceObjectType: Supplier
+    targetObjectType: PurchaseOrder
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: supplierId
+    targetJoinProperty: supplierId
+    storage:
+      table: purchase_orders
+      sourceColumn: supplier_id
+    inverseLinkKey: purchaseOrderToSupplier
+
+  purchaseOrderToSupplier:
+    key: purchaseOrderToSupplier
+    displayName: Supplier
+    description: Purchase order to its supplier.
+    kind: stored
+    sourceObjectType: PurchaseOrder
+    targetObjectType: Supplier
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: supplierId
+    targetJoinProperty: supplierId
+    storage:
+      table: purchase_orders
+      sourceColumn: supplier_id
+    inverseLinkKey: supplierToPurchaseOrders
+
+  purchaseOrderToPurchaseOrderLines:
+    key: purchaseOrderToPurchaseOrderLines
+    displayName: Purchase Order Lines
+    description: Purchase order to line rows through purchase_order_items.purchase_order_id.
+    kind: stored
+    sourceObjectType: PurchaseOrder
+    targetObjectType: PurchaseOrderLine
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: purchaseOrderId
+    targetJoinProperty: purchaseOrderId
+    storage:
+      table: purchase_order_items
+      sourceColumn: purchase_order_id
+    inverseLinkKey: purchaseOrderLineToPurchaseOrder
+
+  purchaseOrderLineToPurchaseOrder:
+    key: purchaseOrderLineToPurchaseOrder
+    displayName: Purchase Order
+    description: Purchase-order line to its purchase order.
+    kind: stored
+    sourceObjectType: PurchaseOrderLine
+    targetObjectType: PurchaseOrder
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: purchaseOrderId
+    targetJoinProperty: purchaseOrderId
+    storage:
+      table: purchase_order_items
+      sourceColumn: purchase_order_id
+    inverseLinkKey: purchaseOrderToPurchaseOrderLines
+
+  purchaseOrderLineToPart:
+    key: purchaseOrderLineToPart
+    displayName: Part
+    description: Purchase-order line to its part.
+    kind: stored
+    sourceObjectType: PurchaseOrderLine
+    targetObjectType: Part
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: purchase_order_items
+      sourceColumn: part_id
+    inverseLinkKey: partToPurchaseOrderLines
+
+  partToPurchaseOrderLines:
+    key: partToPurchaseOrderLines
+    displayName: Purchase Order Lines
+    description: Part to purchase-order line rows through purchase_order_items.part_id.
+    kind: stored
+    sourceObjectType: Part
+    targetObjectType: PurchaseOrderLine
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: purchase_order_items
+      sourceColumn: part_id
+    inverseLinkKey: purchaseOrderLineToPart
+
+  supplierToRiskEvents:
+    key: supplierToRiskEvents
+    displayName: Risk Events
+    description: Supplier to risk events through risk_events.supplier_id.
+    kind: stored
+    sourceObjectType: Supplier
+    targetObjectType: RiskEvent
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: supplierId
+    targetJoinProperty: supplierId
+    storage:
+      table: risk_events
+      sourceColumn: supplier_id
+    inverseLinkKey: riskEventToSupplier
+
+  riskEventToSupplier:
+    key: riskEventToSupplier
+    displayName: Supplier
+    description: Risk event to its supplier reference.
+    kind: stored
+    sourceObjectType: RiskEvent
+    targetObjectType: Supplier
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: supplierId
+    targetJoinProperty: supplierId
+    storage:
+      table: risk_events
+      sourceColumn: supplier_id
+    inverseLinkKey: supplierToRiskEvents
+
+  riskEventToPart:
+    key: riskEventToPart
+    displayName: Part
+    description: Risk event to its referenced part.
+    kind: stored
+    sourceObjectType: RiskEvent
+    targetObjectType: Part
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: risk_events
+      sourceColumn: part_id
+
+  partToRiskEvents:
+    key: partToRiskEvents
+    displayName: Risk Events
+    description: Part to risk events through risk_events.part_id.
+    kind: stored
+    sourceObjectType: Part
+    targetObjectType: RiskEvent
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: risk_events
+      sourceColumn: part_id
+    inverseLinkKey: riskEventToPart
+
+  riskEventToWarehouse:
+    key: riskEventToWarehouse
+    displayName: Warehouse
+    description: Risk event to its referenced warehouse.
+    kind: stored
+    sourceObjectType: RiskEvent
+    targetObjectType: Warehouse
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: warehouseId
+    targetJoinProperty: warehouseId
+    storage:
+      table: risk_events
+      sourceColumn: warehouse_id
+
+  riskEventToShipment:
+    key: riskEventToShipment
+    displayName: Shipment
+    description: Risk event to its referenced shipment.
+    kind: stored
+    sourceObjectType: RiskEvent
+    targetObjectType: Shipment
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: shipmentId
+    targetJoinProperty: shipmentId
+    storage:
+      table: risk_events
+      sourceColumn: shipment_id
+
+  riskEventToMitigationPlans:
+    key: riskEventToMitigationPlans
+    displayName: Mitigation Plans
+    description: Risk event to mitigation-plan rows through mitigation_plans.risk_event_id.
+    kind: stored
+    sourceObjectType: RiskEvent
+    targetObjectType: MitigationPlan
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: riskEventId
+    targetJoinProperty: riskEventId
+    storage:
+      table: mitigation_plans
+      sourceColumn: risk_event_id
+    inverseLinkKey: mitigationPlanToRiskEvent
+
+  mitigationPlanToRiskEvent:
+    key: mitigationPlanToRiskEvent
+    displayName: Risk Event
+    description: Mitigation plan to its risk event.
+    kind: stored
+    sourceObjectType: MitigationPlan
+    targetObjectType: RiskEvent
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: riskEventId
+    targetJoinProperty: riskEventId
+    storage:
+      table: mitigation_plans
+      sourceColumn: risk_event_id
+    inverseLinkKey: riskEventToMitigationPlans
+
+  mitigationPlanToMitigationSteps:
+    key: mitigationPlanToMitigationSteps
+    displayName: Mitigation Steps
+    description: Mitigation plan to step rows through mitigation_plan_steps.mitigation_plan_id.
+    kind: stored
+    sourceObjectType: MitigationPlan
+    targetObjectType: MitigationStep
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: mitigationPlanId
+    targetJoinProperty: mitigationPlanId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: mitigation_plan_id
+    inverseLinkKey: mitigationStepToMitigationPlan
+
+  mitigationStepToMitigationPlan:
+    key: mitigationStepToMitigationPlan
+    displayName: Mitigation Plan
+    description: Mitigation step to its parent mitigation plan.
+    kind: stored
+    sourceObjectType: MitigationStep
+    targetObjectType: MitigationPlan
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: mitigationPlanId
+    targetJoinProperty: mitigationPlanId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: mitigation_plan_id
+    inverseLinkKey: mitigationPlanToMitigationSteps
+
+  mitigationStepToSupplier:
+    key: mitigationStepToSupplier
+    displayName: Supplier
+    description: Mitigation step to its referenced supplier.
+    kind: stored
+    sourceObjectType: MitigationStep
+    targetObjectType: Supplier
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: supplierId
+    targetJoinProperty: supplierId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: supplier_id
+
+  mitigationStepToPurchaseOrder:
+    key: mitigationStepToPurchaseOrder
+    displayName: Purchase Order
+    description: Mitigation step to its referenced purchase order.
+    kind: stored
+    sourceObjectType: MitigationStep
+    targetObjectType: PurchaseOrder
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: purchaseOrderId
+    targetJoinProperty: purchaseOrderId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: purchase_order_id
+
+  mitigationStepToShipment:
+    key: mitigationStepToShipment
+    displayName: Shipment
+    description: Mitigation step to its referenced shipment.
+    kind: stored
+    sourceObjectType: MitigationStep
+    targetObjectType: Shipment
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: shipmentId
+    targetJoinProperty: shipmentId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: shipment_id
+
+  mitigationStepToPart:
+    key: mitigationStepToPart
+    displayName: Part
+    description: Mitigation step to its referenced part.
+    kind: stored
+    sourceObjectType: MitigationStep
+    targetObjectType: Part
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: part_id
+
+  mitigationStepToProduct:
+    key: mitigationStepToProduct
+    displayName: Product
+    description: Mitigation step to its referenced product.
+    kind: stored
+    sourceObjectType: MitigationStep
+    targetObjectType: Product
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: productId
+    targetJoinProperty: productId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: product_id
+
+  mitigationStepToSourceWarehouse:
+    key: mitigationStepToSourceWarehouse
+    displayName: Source Warehouse
+    description: Mitigation step to its source warehouse.
+    kind: stored
+    sourceObjectType: MitigationStep
+    targetObjectType: Warehouse
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: sourceWarehouseId
+    targetJoinProperty: warehouseId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: source_warehouse_id
+
+  mitigationStepToTargetWarehouse:
+    key: mitigationStepToTargetWarehouse
+    displayName: Target Warehouse
+    description: Mitigation step to its target warehouse.
+    kind: stored
+    sourceObjectType: MitigationStep
+    targetObjectType: Warehouse
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: targetWarehouseId
+    targetJoinProperty: warehouseId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: target_warehouse_id
+
+  mitigationPlanToInventoryTransfers:
+    key: mitigationPlanToInventoryTransfers
+    displayName: Inventory Transfers
+    description: >
+      Mitigation plan to filtered reallocation transfer rows through
+      mitigation_plan_steps.mitigation_plan_id.
+    kind: stored
+    sourceObjectType: MitigationPlan
+    targetObjectType: InventoryTransfer
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: mitigationPlanId
+    targetJoinProperty: mitigationPlanId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: mitigation_plan_id
+      rowFilter:
+        action_type: reallocate_inventory
+    inverseLinkKey: inventoryTransferToMitigationPlan
+
+  inventoryTransferToMitigationPlan:
+    key: inventoryTransferToMitigationPlan
+    displayName: Mitigation Plan
+    description: Inventory transfer to its parent mitigation plan.
+    kind: stored
+    sourceObjectType: InventoryTransfer
+    targetObjectType: MitigationPlan
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: mitigationPlanId
+    targetJoinProperty: mitigationPlanId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: mitigation_plan_id
+      rowFilter:
+        action_type: reallocate_inventory
+    inverseLinkKey: mitigationPlanToInventoryTransfers
+
+  inventoryTransferToPart:
+    key: inventoryTransferToPart
+    displayName: Part
+    description: Inventory transfer to its transferred part.
+    kind: stored
+    sourceObjectType: InventoryTransfer
+    targetObjectType: Part
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: partId
+    targetJoinProperty: partId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: part_id
+      rowFilter:
+        action_type: reallocate_inventory
+
+  inventoryTransferToSourceWarehouse:
+    key: inventoryTransferToSourceWarehouse
+    displayName: Source Warehouse
+    description: Inventory transfer to its source warehouse.
+    kind: stored
+    sourceObjectType: InventoryTransfer
+    targetObjectType: Warehouse
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: sourceWarehouseId
+    targetJoinProperty: warehouseId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: source_warehouse_id
+      rowFilter:
+        action_type: reallocate_inventory
+    inverseLinkKey: warehouseToInventoryTransferSources
+
+  warehouseToInventoryTransferSources:
+    key: warehouseToInventoryTransferSources
+    displayName: Outgoing Inventory Transfers
+    description: Source warehouse to filtered reallocation transfer rows.
+    kind: stored
+    sourceObjectType: Warehouse
+    targetObjectType: InventoryTransfer
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: warehouseId
+    targetJoinProperty: sourceWarehouseId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: source_warehouse_id
+      rowFilter:
+        action_type: reallocate_inventory
+    inverseLinkKey: inventoryTransferToSourceWarehouse
+
+  inventoryTransferToDestinationWarehouse:
+    key: inventoryTransferToDestinationWarehouse
+    displayName: Destination Warehouse
+    description: Inventory transfer to its destination warehouse.
+    kind: stored
+    sourceObjectType: InventoryTransfer
+    targetObjectType: Warehouse
+    cardinality: many-to-one
+    direction: outbound
+    sourceJoinProperty: targetWarehouseId
+    targetJoinProperty: warehouseId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: target_warehouse_id
+      rowFilter:
+        action_type: reallocate_inventory
+    inverseLinkKey: warehouseToInventoryTransferDestinations
+
+  warehouseToInventoryTransferDestinations:
+    key: warehouseToInventoryTransferDestinations
+    displayName: Incoming Inventory Transfers
+    description: Destination warehouse to filtered reallocation transfer rows.
+    kind: stored
+    sourceObjectType: Warehouse
+    targetObjectType: InventoryTransfer
+    cardinality: one-to-many
+    direction: outbound
+    sourceJoinProperty: warehouseId
+    targetJoinProperty: targetWarehouseId
+    storage:
+      table: mitigation_plan_steps
+      sourceColumn: target_warehouse_id
+      rowFilter:
+        action_type: reallocate_inventory
+    inverseLinkKey: inventoryTransferToDestinationWarehouse
+
+  supplierSuppliesParts:
+    key: supplierSuppliesParts
+    displayName: Supplies
+    description: Flattened supplier-to-part business link through SupplierPart.
+    kind: flattened
+    sourceObjectType: Supplier
+    targetObjectType: Part
+    cardinality: many-to-many
+    direction: outbound
+    path:
+      - supplierToSupplierParts
+      - supplierPartToPart
+
+  partUsedInProducts:
+    key: partUsedInProducts
+    displayName: Used In
+    description: Flattened part-to-product business link through ProductPartRequirement.
+    kind: flattened
+    sourceObjectType: Part
+    targetObjectType: Product
+    cardinality: many-to-many
+    direction: outbound
+    path:
+      - partToProductPartRequirements
+      - productPartRequirementToProduct
+
+  productIncludedInCustomerOrders:
+    key: productIncludedInCustomerOrders
+    displayName: Included In
+    description: Flattened product-to-customer-order business link through OrderLine.
+    kind: flattened
+    sourceObjectType: Product
+    targetObjectType: CustomerOrder
+    cardinality: many-to-many
+    direction: outbound
+    path:
+      - productToOrderLines
+      - orderLineToCustomerOrder
+
+  warehouseStoresParts:
+    key: warehouseStoresParts
+    displayName: Stores
+    description: Flattened warehouse-to-part business link through InventoryPosition.
+    kind: flattened
+    sourceObjectType: Warehouse
+    targetObjectType: Part
+    cardinality: many-to-many
+    direction: outbound
+    path:
+      - warehouseToInventoryPositions
+      - inventoryPositionToPart
+
+functions: {}
+
+actions: {}
+
+roles: {}
+
+permissions: {}

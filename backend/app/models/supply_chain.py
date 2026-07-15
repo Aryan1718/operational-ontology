@@ -17,6 +17,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -135,6 +136,7 @@ class Part(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class SupplierPart(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "supplier_parts"
     __table_args__ = (
+        UniqueConstraint("supplier_id", "part_id", name="uq_supplier_parts_supplier_part"),
         CheckConstraint(
             "status IN ('active', 'inactive', 'blocked')",
             name="supplier_parts_status_allowed",
@@ -173,13 +175,6 @@ class SupplierPart(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     part: Mapped[Part] = relationship(back_populates="supplier_parts")
 
 
-Index(
-    "uq_supplier_parts_supplier_part",
-    SupplierPart.supplier_id,
-    SupplierPart.part_id,
-    unique=True,
-)
-
 
 class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "products"
@@ -212,6 +207,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class ProductBomItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "product_bom_items"
     __table_args__ = (
+        UniqueConstraint("product_id", "part_id", name="uq_product_bom_items_product_part"),
         CheckConstraint(
             "quantity_required > 0", name="product_bom_items_quantity_required_positive"
         ),
@@ -230,13 +226,6 @@ class ProductBomItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     product: Mapped[Product] = relationship(back_populates="product_bom_items")
     part: Mapped[Part] = relationship(back_populates="product_bom_items")
 
-
-Index(
-    "uq_product_bom_items_product_part",
-    ProductBomItem.product_id,
-    ProductBomItem.part_id,
-    unique=True,
-)
 
 
 class Warehouse(UUIDPrimaryKeyMixin, TimestampMixin, Base):
