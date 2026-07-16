@@ -2116,10 +2116,687 @@ linkTypes:
       - warehouseToInventoryPositions
       - inventoryPositionToPart
 
-functions: {}
+functions:
+  findImpactedParts:
+    key: findImpactedParts
+    displayName: Find Impacted Parts
+    description: Find parts impacted by a disruption event.
+    handler: findImpactedParts
+  findImpactedProducts:
+    key: findImpactedProducts
+    displayName: Find Impacted Products
+    description: Find products impacted by a disruption event.
+    handler: findImpactedProducts
+  findImpactedOrders:
+    key: findImpactedOrders
+    displayName: Find Impacted Orders
+    description: Find customer orders impacted by a disruption event.
+    handler: findImpactedOrders
+  calculateStockoutRisk:
+    key: calculateStockoutRisk
+    displayName: Calculate Stockout Risk
+    description: Calculate inventory stockout risk for a part or warehouse context.
+    handler: calculateStockoutRisk
+  getInventoryAvailability:
+    key: getInventoryAvailability
+    displayName: Get Inventory Availability
+    description: Return current inventory availability for the requested business context.
+    handler: getInventoryAvailability
+  findAlternativeWarehouses:
+    key: findAlternativeWarehouses
+    displayName: Find Alternative Warehouses
+    description: Find warehouses that can safely mitigate an inventory shortage.
+    handler: findAlternativeWarehouses
+  findExpeditablePurchaseOrders:
+    key: findExpeditablePurchaseOrders
+    displayName: Find Expeditable Purchase Orders
+    description: Find purchase orders that can be expedited safely.
+    handler: findExpeditablePurchaseOrders
+  rankImpactedOrders:
+    key: rankImpactedOrders
+    displayName: Rank Impacted Orders
+    description: Rank impacted customer orders for operational prioritization.
+    handler: rankImpactedOrders
+  recommendMitigationPlan:
+    key: recommendMitigationPlan
+    displayName: Recommend Mitigation Plan
+    description: Recommend a mitigation strategy using approved read-only analysis.
+    handler: recommendMitigationPlan
+  validateMitigationPlan:
+    key: validateMitigationPlan
+    displayName: Validate Mitigation Plan
+    description: Validate a mitigation plan before submission or execution.
+    handler: validateMitigationPlan
 
-actions: {}
+actions:
+  createRiskEvent:
+    key: createRiskEvent
+    displayName: Create Risk Event
+    description: Create a governed disruption risk event.
+    handler: createRiskEvent
+    targetObjectType: RiskEvent
+  acknowledgeRiskEvent:
+    key: acknowledgeRiskEvent
+    displayName: Acknowledge Risk Event
+    description: Acknowledge a risk event for governed response handling.
+    handler: acknowledgeRiskEvent
+    targetObjectType: RiskEvent
+  generateMitigationPlan:
+    key: generateMitigationPlan
+    displayName: Generate Mitigation Plan
+    description: Generate a draft mitigation plan from approved ontology analysis.
+    handler: generateMitigationPlan
+    targetObjectType: MitigationPlan
+  submitMitigationPlan:
+    key: submitMitigationPlan
+    displayName: Submit Mitigation Plan
+    description: Submit a draft mitigation plan for approval.
+    handler: submitMitigationPlan
+    targetObjectType: MitigationPlan
+  approveMitigationPlan:
+    key: approveMitigationPlan
+    displayName: Approve Mitigation Plan
+    description: Approve a mitigation plan for execution.
+    handler: approveMitigationPlan
+    targetObjectType: MitigationPlan
+  rejectMitigationPlan:
+    key: rejectMitigationPlan
+    displayName: Reject Mitigation Plan
+    description: Reject a mitigation plan during human review.
+    handler: rejectMitigationPlan
+    targetObjectType: MitigationPlan
+  executeMitigationPlan:
+    key: executeMitigationPlan
+    displayName: Execute Mitigation Plan
+    description: Execute an approved mitigation plan through governed child actions.
+    handler: executeMitigationPlan
+    targetObjectType: MitigationPlan
+  reallocateInventory:
+    key: reallocateInventory
+    displayName: Reallocate Inventory
+    description: Reallocate inventory between warehouses through a governed action.
+    handler: reallocateInventory
+    targetObjectType: InventoryTransfer
+  completeInventoryTransfer:
+    key: completeInventoryTransfer
+    displayName: Complete Inventory Transfer
+    description: Complete an in-flight governed inventory transfer.
+    handler: completeInventoryTransfer
+    targetObjectType: InventoryTransfer
+  expeditePurchaseOrder:
+    key: expeditePurchaseOrder
+    displayName: Expedite Purchase Order
+    description: Expedite a purchase order through governed operational change.
+    handler: expeditePurchaseOrder
+    targetObjectType: PurchaseOrder
+  prioritizeShipment:
+    key: prioritizeShipment
+    displayName: Prioritize Shipment
+    description: Increase shipment priority through governed operational change.
+    handler: prioritizeShipment
+    targetObjectType: Shipment
+  resolveRiskEvent:
+    key: resolveRiskEvent
+    displayName: Resolve Risk Event
+    description: Resolve a risk event after mitigation or review.
+    handler: resolveRiskEvent
+    targetObjectType: RiskEvent
 
-roles: {}
+roles:
+  Viewer:
+    key: Viewer
+    displayName: Viewer
+    description: Read-only operational visibility role.
+  Planner:
+    key: Planner
+    displayName: Planner
+    description: Planner role for investigation and draft mitigation work.
+  OperationsManager:
+    key: OperationsManager
+    displayName: Operations Manager
+    description: Operations manager role for governed approvals and execution.
+  Admin:
+    key: Admin
+    displayName: Admin
+    description: Administrative role for full governance visibility.
+  AIAgent:
+    key: AIAgent
+    displayName: AI Agent
+    description: Restricted AI role for approved analysis and draft generation only.
 
-permissions: {}
+permissions:
+  permissionModel:
+    version: 1.0.0
+    defaultEffect: deny
+  objectTypeDefaults:
+    list:
+      capability: object.list
+      resourceType: objectType
+      resourceKey: "*"
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      deniedActorTypes:
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+      roleObligations:
+        Viewer:
+          projectionKey: full
+        Planner:
+          projectionKey: full
+        OperationsManager:
+          projectionKey: full
+        Admin:
+          projectionKey: full
+        AIAgent:
+          projectionKey: ai_safe
+    search:
+      capability: object.search
+      resourceType: objectType
+      resourceKey: "*"
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      deniedActorTypes:
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+      roleObligations:
+        Viewer:
+          projectionKey: full
+        Planner:
+          projectionKey: full
+        OperationsManager:
+          projectionKey: full
+        Admin:
+          projectionKey: full
+        AIAgent:
+          projectionKey: ai_safe
+    read:
+      capability: object.read
+      resourceType: objectType
+      resourceKey: "*"
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      deniedActorTypes:
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+      roleObligations:
+        Viewer:
+          projectionKey: full
+        Planner:
+          projectionKey: full
+        OperationsManager:
+          projectionKey: full
+        Admin:
+          projectionKey: full
+        AIAgent:
+          projectionKey: ai_safe
+  linkTypeDefaults:
+    traverse:
+      capability: link.traverse
+      resourceType: linkType
+      resourceKey: "*"
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      deniedActorTypes:
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+  policies:
+    - capability: ontology.metadata.read
+      resourceType: ontology
+      resourceKey: operationalOntology
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+      deniedActorTypes:
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: permission.metadata.read
+      resourceType: ontology
+      resourceKey: operationalOntology
+      allowedRoles:
+        - Admin
+      deniedActorTypes:
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findImpactedParts
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findImpactedProducts
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findImpactedOrders
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: calculateStockoutRisk
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: getInventoryAvailability
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findAlternativeWarehouses
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findExpeditablePurchaseOrders
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: rankImpactedOrders
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: recommendMitigationPlan
+      allowedRoles:
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: function.execute
+      resourceType: function
+      resourceKey: validateMitigationPlan
+      allowedRoles:
+        - Planner
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+    - capability: action.execute
+      resourceType: action
+      resourceKey: createRiskEvent
+      allowedRoles:
+        - Planner
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+    - capability: action.execute
+      resourceType: action
+      resourceKey: acknowledgeRiskEvent
+      allowedRoles:
+        - Planner
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+    - capability: action.execute
+      resourceType: action
+      resourceKey: generateMitigationPlan
+      allowedRoles:
+        - Planner
+        - OperationsManager
+        - Admin
+        - AIAgent
+      allowedActorTypes:
+        - human
+        - ai_agent
+      allowedInvocationSources:
+        - web_app
+        - api
+        - mcp
+        - ai_workflow
+        - internal
+    - capability: action.execute
+      resourceType: action
+      resourceKey: submitMitigationPlan
+      allowedRoles:
+        - Planner
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+    - capability: action.execute
+      resourceType: action
+      resourceKey: approveMitigationPlan
+      allowedRoles:
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+    - capability: action.execute
+      resourceType: action
+      resourceKey: rejectMitigationPlan
+      allowedRoles:
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+    - capability: action.execute
+      resourceType: action
+      resourceKey: executeMitigationPlan
+      allowedRoles:
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+    - capability: action.execute
+      resourceType: action
+      resourceKey: reallocateInventory
+      allowedRoles:
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+    - capability: action.execute
+      resourceType: action
+      resourceKey: completeInventoryTransfer
+      allowedRoles:
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+    - capability: action.execute
+      resourceType: action
+      resourceKey: expeditePurchaseOrder
+      allowedRoles:
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+    - capability: action.execute
+      resourceType: action
+      resourceKey: prioritizeShipment
+      allowedRoles:
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+    - capability: action.execute
+      resourceType: action
+      resourceKey: resolveRiskEvent
+      allowedRoles:
+        - OperationsManager
+        - Admin
+      allowedActorTypes:
+        - human
+      allowedInvocationSources:
+        - web_app
+        - api
+    - capability: audit.read
+      resourceType: auditLog
+      resourceKey: object_activity_summary
+      allowedRoles:
+        - Viewer
+        - Planner
+        - OperationsManager
+        - Admin
+      deniedActorTypes:
+        - ai_agent
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+      roleObligations:
+        Viewer:
+          auditView: summary
+        Planner:
+          auditView: object_history
+        OperationsManager:
+          auditView: operational
+        Admin:
+          auditView: full
+    - capability: audit.read
+      resourceType: auditLog
+      resourceKey: object_history
+      allowedRoles:
+        - Planner
+        - OperationsManager
+        - Admin
+      deniedActorTypes:
+        - ai_agent
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+      roleObligations:
+        Planner:
+          auditView: object_history
+        OperationsManager:
+          auditView: operational
+        Admin:
+          auditView: full
+    - capability: audit.read
+      resourceType: auditLog
+      resourceKey: operational
+      allowedRoles:
+        - OperationsManager
+        - Admin
+      deniedActorTypes:
+        - ai_agent
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+      roleObligations:
+        OperationsManager:
+          auditView: operational
+        Admin:
+          auditView: full
+    - capability: audit.read.full
+      resourceType: auditLog
+      resourceKey: full
+      allowedRoles:
+        - Admin
+      deniedActorTypes:
+        - ai_agent
+        - service
+      allowedInvocationSources:
+        - web_app
+        - api
+        - internal
+      obligations:
+        auditView: full

@@ -1,6 +1,8 @@
 """Shared API schemas."""
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class DatabaseHealth(BaseModel):
@@ -25,3 +27,17 @@ class DatabaseConnectionHealthResponse(BaseModel):
     """Database connectivity health response."""
 
     status: str
+
+
+class ApiErrorDetail(BaseModel):
+    """Structured API error payload."""
+
+    code: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ApiErrorResponse(BaseModel):
+    """Structured API error response."""
+
+    error: ApiErrorDetail

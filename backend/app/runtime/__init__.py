@@ -1,1 +1,1 @@
-"""Ontology runtime package."""
+"""Runtime services."""
