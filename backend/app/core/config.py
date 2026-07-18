@@ -1,11 +1,11 @@
 """Environment-backed application settings."""
 
 from functools import lru_cache
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import ParseResult, urlparse
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 from sqlalchemy.engine import URL
 
 
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     database_user: str = Field(default="postgres", alias="DATABASE_USER")
     database_password: str = Field(default="postgres", alias="DATABASE_PASSWORD")
     database_url_override: str | None = Field(default=None, alias="DATABASE_URL")
-    backend_cors_origins: list[str] = Field(
+    backend_cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:3000"],
         alias="BACKEND_CORS_ORIGINS",
     )
