@@ -31,7 +31,12 @@ class OntologyIdentity(OntologyBaseModel):
 
 
 class OntologySourceDefinition(OntologyBaseModel):
-    """Backing source mapping for an ontology object."""
+    """Backing source mapping for an ontology object.
+
+    ``primaryKeyColumn`` refers to the relational primary key column on the
+    backing table. Public ontology object identity is defined separately by the
+    object type's ``primaryKeyProperty``.
+    """
 
     table: str
     primaryKeyColumn: str

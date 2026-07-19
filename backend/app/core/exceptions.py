@@ -22,7 +22,7 @@ class ApplicationError(Exception):
     details: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        super().__init__(self.message)
+        Exception.__init__(self, self.message)
 
 
 @dataclass(slots=True)
@@ -73,3 +73,75 @@ class AuthorizationDeniedError(ApplicationError):
                 else None
             ),
         }
+
+
+class ObjectTypeNotFoundError(ApplicationError):
+    """Raised when an ontology object type is not registered."""
+
+    def __init__(self, object_type: str) -> None:
+        super().__init__(
+            code="OBJECT_TYPE_NOT_FOUND",
+            message=f"Ontology object type '{object_type}' was not found.",
+            status_code=404,
+            details={"objectType": object_type},
+        )
+
+
+class ObjectNotFoundError(ApplicationError):
+    """Raised when one ontology object instance cannot be found."""
+
+    def __init__(self, object_type: str, object_id: str) -> None:
+        super().__init__(
+            code="OBJECT_NOT_FOUND",
+            message=f"{object_type} object '{object_id}' was not found.",
+            status_code=404,
+            details={"objectType": object_type, "objectId": object_id},
+        )
+
+
+class LinkNotFoundError(ApplicationError):
+    """Raised when an ontology link type cannot be traversed from a source object."""
+
+    def __init__(self, object_type: str, link_type: str) -> None:
+        super().__init__(
+            code="LINK_NOT_FOUND",
+            message=(
+                f"Ontology link type '{link_type}' was not found for "
+                f"object type '{object_type}'."
+            ),
+            status_code=404,
+            details={"objectType": object_type, "linkType": link_type},
+        )
+
+
+class LinkResolutionNotImplementedError(ApplicationError):
+    """Raised when a declared link kind is recognized but not implemented yet."""
+
+    def __init__(self, link_type: str, kind: str) -> None:
+        super().__init__(
+            code="LINK_RESOLUTION_NOT_IMPLEMENTED",
+            message=(
+                f"Ontology link type '{link_type}' uses unsupported "
+                f"link kind '{kind}'."
+            ),
+            status_code=501,
+            details={"linkType": link_type, "kind": kind},
+        )
+
+
+class InvalidOntologyMappingError(ApplicationError):
+    """Raised when trusted ontology metadata cannot be mapped safely."""
+
+    def __init__(self, object_type: str, reason: str) -> None:
+        super().__init__(
+            code="INVALID_ONTOLOGY_MAPPING",
+            message=(
+                f"Ontology object type '{object_type}' has an invalid database mapping."
+            ),
+            status_code=500,
+            details={"objectType": object_type, "reason": reason},
+        )
+
+
+class OntologyMappingError(InvalidOntologyMappingError):
+    """Backward-compatible alias for invalid ontology mapping errors."""

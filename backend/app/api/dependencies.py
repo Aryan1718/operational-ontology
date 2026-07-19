@@ -1,13 +1,21 @@
 """Shared FastAPI dependencies."""
 
-from typing import cast
+from typing import Annotated, cast
 
-from fastapi import Request
+from fastapi import Depends, Request
+from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
+from app.db.session import get_db_session
 from app.ontology.permission_registry import PermissionRegistry
 from app.ontology.registry import OntologyRegistry
+from app.repositories.object_repository import ObjectRepository
 from app.runtime.authorization_service import AuthorizationService
+from app.runtime.link_runtime import LinkRuntime
+from app.runtime.object_runtime import ObjectRuntime
+
+
+DbSessionDependency = Annotated[Session, Depends(get_db_session)]
 
 
 def get_app_settings() -> Settings:
@@ -28,3 +36,33 @@ def get_permission_registry(request: Request) -> PermissionRegistry:
 def get_authorization_service(request: Request) -> AuthorizationService:
     """Provide the shared central authorization service from app state."""
     return cast(AuthorizationService, request.app.state.authorization_service)
+
+
+def get_object_runtime(
+    request: Request,
+    session: DbSessionDependency,
+) -> ObjectRuntime:
+    """Provide the per-request object runtime backed by the current DB session."""
+    registry = get_ontology_registry(request)
+    return ObjectRuntime(
+        registry=registry,
+        repository=ObjectRepository(session),
+    )
+
+
+def get_link_runtime(
+    request: Request,
+    session: DbSessionDependency,
+) -> LinkRuntime:
+    """Provide the per-request link runtime backed by the current DB session."""
+    registry = get_ontology_registry(request)
+    repository = ObjectRepository(session)
+    object_runtime = ObjectRuntime(
+        registry=registry,
+        repository=repository,
+    )
+    return LinkRuntime(
+        registry=registry,
+        repository=repository,
+        object_runtime=object_runtime,
+    )

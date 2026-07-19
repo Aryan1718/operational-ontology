@@ -13,9 +13,9 @@ def test_ontology_summary_endpoint_returns_registry_counts(client: TestClient) -
     assert payload["displayName"] == "Operational Ontology"
     assert payload["version"] == "1.0.0"
     assert payload["objectTypeCount"] == 16
-    assert payload["functionCount"] == 0
-    assert payload["actionTypeCount"] == 0
-    assert payload["roleCount"] == 0
+    assert payload["functionCount"] == 10
+    assert payload["actionTypeCount"] == 12
+    assert payload["roleCount"] == 5
 
 
 def test_object_type_collection_endpoint_returns_registered_types(
@@ -37,7 +37,7 @@ def test_object_type_detail_endpoint_returns_one_definition(client: TestClient) 
     assert response.status_code == 200
     payload = response.json()
     assert payload["key"] == "Supplier"
-    assert payload["primaryKeyProperty"] == "supplierId"
+    assert payload["primaryKeyProperty"] == "supplierCode"
     assert payload["source"]["table"] == "suppliers"
     assert "supplierToPurchaseOrders" in payload["links"]
 

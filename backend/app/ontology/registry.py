@@ -141,3 +141,7 @@ class OntologyRegistry:
     def get_object_type(self, object_type: str) -> OntologyObjectTypeDefinition | None:
         """Return one object-type definition by API name."""
         return self.object_types_by_key.get(object_type)
+
+    def get_link_type(self, link_type: str) -> OntologyLinkTypeDefinition | None:
+        """Return one link-type definition by API name."""
+        return self.link_types_by_key.get(link_type)

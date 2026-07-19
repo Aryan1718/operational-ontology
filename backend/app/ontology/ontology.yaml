@@ -124,7 +124,7 @@ objectTypes:
     source:
       table: suppliers
       primaryKeyColumn: id
-    primaryKeyProperty: supplierId
+    primaryKeyProperty: supplierCode
     titleProperty: name
     readOnly: true
     storedProperties:
@@ -193,7 +193,7 @@ objectTypes:
     source:
       table: parts
       primaryKeyColumn: id
-    primaryKeyProperty: partId
+    primaryKeyProperty: partCode
     titleProperty: name
     readOnly: true
     storedProperties:
@@ -260,7 +260,7 @@ objectTypes:
     source:
       table: products
       primaryKeyColumn: id
-    primaryKeyProperty: productId
+    primaryKeyProperty: productCode
     titleProperty: name
     readOnly: true
     storedProperties:
@@ -313,7 +313,7 @@ objectTypes:
     source:
       table: warehouses
       primaryKeyColumn: id
-    primaryKeyProperty: warehouseId
+    primaryKeyProperty: warehouseCode
     titleProperty: name
     readOnly: true
     storedProperties:
@@ -565,7 +565,7 @@ objectTypes:
     source:
       table: customer_orders
       primaryKeyColumn: id
-    primaryKeyProperty: customerOrderId
+    primaryKeyProperty: orderCode
     titleProperty: orderCode
     readOnly: true
     storedProperties:
@@ -674,7 +674,7 @@ objectTypes:
     source:
       table: shipments
       primaryKeyColumn: id
-    primaryKeyProperty: shipmentId
+    primaryKeyProperty: shipmentCode
     titleProperty: shipmentCode
     readOnly: true
     storedProperties:
@@ -756,7 +756,7 @@ objectTypes:
     source:
       table: purchase_orders
       primaryKeyColumn: id
-    primaryKeyProperty: purchaseOrderId
+    primaryKeyProperty: purchaseOrderCode
     titleProperty: purchaseOrderCode
     readOnly: true
     storedProperties:
@@ -874,7 +874,7 @@ objectTypes:
     source:
       table: risk_events
       primaryKeyColumn: id
-    primaryKeyProperty: riskEventId
+    primaryKeyProperty: riskCode
     titleProperty: riskCode
     readOnly: true
     storedProperties:
@@ -971,7 +971,7 @@ objectTypes:
     source:
       table: mitigation_plans
       primaryKeyColumn: id
-    primaryKeyProperty: mitigationPlanId
+    primaryKeyProperty: mitigationCode
     titleProperty: mitigationCode
     readOnly: true
     storedProperties:
