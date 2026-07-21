@@ -50,6 +50,7 @@ class _StubRepository:
         self._records_by_lookup = records_by_lookup
         self._linked_records = linked_records
         self._column_attribute_names = column_attribute_names
+        self.get_one_calls: list[dict[str, object]] = []
         self.get_many_calls: list[dict[str, object]] = []
 
     def resolve_object_mapping(
@@ -66,7 +67,14 @@ class _StubRepository:
         object_id: str,
         row_filter: dict[str, object] | None = None,
     ) -> object | None:
-        del identifier_column, row_filter
+        self.get_one_calls.append(
+            {
+                "model": model,
+                "identifierColumn": identifier_column,
+                "objectId": object_id,
+                "rowFilter": row_filter,
+            }
+        )
         return self._records_by_lookup.get((model, object_id))
 
     def get_many_by_column(
@@ -270,7 +278,7 @@ def test_link_route_delegates_to_runtime() -> None:
         response = client.get("/api/v1/objects/Supplier/S-102/links/supplierToPurchaseOrders")
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert response.json()["data"] == {
         "source": {"objectType": "Supplier", "objectId": "S-102"},
         "linkType": "supplierToPurchaseOrders",
         "targetObjectType": "TargetObject",
@@ -564,7 +572,7 @@ def test_link_route_returns_existing_success_shape(
     )
 
     assert response.status_code == 200
-    assert response.json() == {
+    assert response.json()["data"] == {
         "source": {"objectType": "Supplier", "objectId": "S-102"},
         "linkType": "supplierToPurchaseOrders",
         "targetObjectType": "PurchaseOrder",
@@ -662,12 +670,10 @@ def test_link_route_returns_unknown_object_type_error(
     )
 
     assert response.status_code == 404
-    assert response.json() == {
-        "error": {
-            "code": "OBJECT_TYPE_NOT_FOUND",
-            "message": "Ontology object type 'UnknownType' was not found.",
-            "details": {"objectType": "UnknownType"},
-        }
+    assert response.json()["error"] == {
+        "code": "OBJECT_TYPE_NOT_FOUND",
+        "message": "Ontology object type 'UnknownType' was not found.",
+        "details": {"objectType": "UnknownType"},
     }
 
 
@@ -679,15 +685,13 @@ def test_link_route_returns_missing_source_object_error(
     )
 
     assert response.status_code == 404
-    assert response.json() == {
-        "error": {
-            "code": "OBJECT_NOT_FOUND",
-            "message": "Supplier object 'S-DOES-NOT-EXIST' was not found.",
-            "details": {
-                "objectType": "Supplier",
-                "objectId": "S-DOES-NOT-EXIST",
-            },
-        }
+    assert response.json()["error"] == {
+        "code": "OBJECT_NOT_FOUND",
+        "message": "Supplier object 'S-DOES-NOT-EXIST' was not found.",
+        "details": {
+            "objectType": "Supplier",
+            "objectId": "S-DOES-NOT-EXIST",
+        },
     }
 
 
@@ -699,14 +703,12 @@ def test_link_route_returns_unknown_link_type_error(
     )
 
     assert response.status_code == 404
-    assert response.json() == {
-        "error": {
-            "code": "LINK_NOT_FOUND",
-            "message": (
-                "Ontology link type 'unknownLink' was not found for object type 'Supplier'."
-            ),
-            "details": {"objectType": "Supplier", "linkType": "unknownLink"},
-        }
+    assert response.json()["error"] == {
+        "code": "LINK_NOT_FOUND",
+        "message": (
+            "Ontology link type 'unknownLink' was not found for object type 'Supplier'."
+        ),
+        "details": {"objectType": "Supplier", "linkType": "unknownLink"},
     }
 
 
@@ -718,17 +720,15 @@ def test_link_route_rejects_globally_valid_link_not_declared_on_source_type(
     )
 
     assert response.status_code == 404
-    assert response.json() == {
-        "error": {
-            "code": "LINK_NOT_FOUND",
-            "message": (
-                "Ontology link type 'customerOrderToOrderLines' was not found for object type 'Supplier'."
-            ),
-            "details": {
-                "objectType": "Supplier",
-                "linkType": "customerOrderToOrderLines",
-            },
-        }
+    assert response.json()["error"] == {
+        "code": "LINK_NOT_FOUND",
+        "message": (
+            "Ontology link type 'customerOrderToOrderLines' was not found for object type 'Supplier'."
+        ),
+        "details": {
+            "objectType": "Supplier",
+            "linkType": "customerOrderToOrderLines",
+        },
     }
 
 
@@ -740,13 +740,353 @@ def test_link_route_rejects_unsupported_flattened_link(
     )
 
     assert response.status_code == 501
-    assert response.json() == {
-        "error": {
-            "code": "LINK_RESOLUTION_NOT_IMPLEMENTED",
-            "message": (
-                "Ontology link type 'supplierSuppliesParts' uses unsupported link kind 'flattened'."
-            ),
-            "details": {"linkType": "supplierSuppliesParts", "kind": "flattened"},
-        }
+    assert response.json()["error"] == {
+        "code": "LINK_RESOLUTION_NOT_IMPLEMENTED",
+        "message": (
+            "Ontology link type 'supplierSuppliesParts' uses unsupported link kind 'flattened'."
+        ),
+        "details": {"linkType": "supplierSuppliesParts", "kind": "flattened"},
     }
 
+
+
+def test_aggregate_link_route_delegates_to_runtime() -> None:
+    app = create_application()
+    calls: list[tuple[str, str]] = []
+
+    class StubRuntime:
+        def get_all_links(self, object_type: str, object_id: str) -> dict[str, object]:
+            calls.append((object_type, object_id))
+            return {
+                "source": {"objectType": object_type, "objectId": object_id},
+                "links": [],
+            }
+
+    app.dependency_overrides[get_link_runtime] = lambda: StubRuntime()
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/objects/Supplier/S-102/links")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "source": {"objectType": "Supplier", "objectId": "S-102"},
+        "links": [],
+    }
+    assert calls == [("Supplier", "S-102")]
+
+
+def test_link_runtime_get_all_links_loads_source_once_and_preserves_order() -> None:
+    source_definition = _object_definition(
+        key="SyntheticSource",
+        table="source_objects",
+        primary_key_property="sourceCode",
+        title_property="name",
+        stored_properties={
+            "sourceId": _stored_property("id"),
+            "sourceCode": _stored_property("source_code"),
+            "name": _stored_property("name"),
+        },
+        links=["syntheticLink", "syntheticUnsupported"],
+    )
+    target_definition = _object_definition(
+        key="SyntheticTarget",
+        table="target_objects",
+        primary_key_property="targetCode",
+        title_property="name",
+        stored_properties={
+            "targetId": _stored_property("id"),
+            "targetCode": _stored_property("target_code"),
+            "sourceCode": _stored_property("source_code"),
+            "name": _stored_property("name"),
+            "status": _stored_property("status"),
+        },
+        links=[],
+    )
+    stored_link = _link_definition(
+        key="syntheticLink",
+        source_object_type="SyntheticSource",
+        target_object_type="SyntheticTarget",
+        source_join_property="sourceCode",
+        target_join_property="sourceCode",
+    )
+    unsupported_link = _link_definition(
+        key="syntheticUnsupported",
+        kind="flattened",
+        source_object_type="SyntheticSource",
+        target_object_type="SyntheticTarget",
+        source_join_property="sourceCode",
+        target_join_property="sourceCode",
+        storage_table=None,
+        storage_column=None,
+    )
+    runtime, repository = _runtime_for_synthetic_link(
+        source_definition=source_definition,
+        target_definition=target_definition,
+        link_definition=stored_link,
+        target_records=[
+            SimpleNamespace(
+                id="db-target-1",
+                target_code="TARGET-1",
+                source_code="SRC-1",
+                status="active",
+                name="Target 1",
+            )
+        ],
+    )
+    runtime._registry = cast(
+        OntologyRegistry,
+        _StubRegistry(
+            object_definitions={
+                source_definition.key: source_definition,
+                target_definition.key: target_definition,
+            },
+            link_definitions={
+                stored_link.key: stored_link,
+                unsupported_link.key: unsupported_link,
+            },
+        ),
+    )
+
+    response = runtime.get_all_links("SyntheticSource", "SRC-1")
+
+    assert response.source.objectType == "SyntheticSource"
+    assert response.source.objectId == "SRC-1"
+    assert [link.linkType for link in response.links] == [
+        "syntheticLink",
+        "syntheticUnsupported",
+    ]
+    assert response.links[0].resolutionStatus == "resolved"
+    assert [item.objectId for item in response.links[0].objects] == ["TARGET-1"]
+    assert response.links[1].resolutionStatus == "notImplemented"
+    assert response.links[1].objects == []
+    assert len(repository.get_one_calls) == 1
+    assert repository.get_many_calls == [
+        {
+            "model": _TargetModel,
+            "filterColumn": "source_code",
+            "filterValue": "SRC-1",
+            "rowFilter": {"status": "active"},
+            "orderByColumn": "target_code",
+        }
+    ]
+
+
+def test_link_runtime_get_all_links_rejects_missing_declared_link_definition() -> None:
+    source_definition = _object_definition(
+        key="SyntheticSource",
+        table="source_objects",
+        primary_key_property="sourceCode",
+        title_property="name",
+        stored_properties={
+            "sourceId": _stored_property("id"),
+            "sourceCode": _stored_property("source_code"),
+            "name": _stored_property("name"),
+        },
+        links=["missingLink"],
+    )
+    target_definition = _object_definition(
+        key="SyntheticTarget",
+        table="target_objects",
+        primary_key_property="targetCode",
+        title_property="name",
+        stored_properties={
+            "targetId": _stored_property("id"),
+            "targetCode": _stored_property("target_code"),
+            "sourceCode": _stored_property("source_code"),
+            "name": _stored_property("name"),
+            "status": _stored_property("status"),
+        },
+        links=[],
+    )
+    runtime, _ = _runtime_for_synthetic_link(
+        source_definition=source_definition,
+        target_definition=target_definition,
+        link_definition=_link_definition(
+            key="syntheticLink",
+            source_object_type="SyntheticSource",
+            target_object_type="SyntheticTarget",
+            source_join_property="sourceCode",
+            target_join_property="sourceCode",
+        ),
+    )
+    runtime._registry = cast(
+        OntologyRegistry,
+        _StubRegistry(
+            object_definitions={
+                source_definition.key: source_definition,
+                target_definition.key: target_definition,
+            },
+            link_definitions={},
+        ),
+    )
+
+    try:
+        runtime.get_all_links("SyntheticSource", "SRC-1")
+    except InvalidOntologyMappingError as exc:
+        assert exc.code == "INVALID_ONTOLOGY_MAPPING"
+        assert exc.details["objectType"] == "SyntheticSource"
+        assert exc.details["reason"] == (
+            "Declared link 'missingLink' was not found in the ontology registry."
+        )
+    else:
+        raise AssertionError("Expected invalid ontology mapping error")
+
+
+def test_link_runtime_get_all_links_rejects_invalid_stored_mapping() -> None:
+    source_definition = _object_definition(
+        key="SyntheticSource",
+        table="source_objects",
+        primary_key_property="sourceCode",
+        title_property="name",
+        stored_properties={
+            "sourceId": _stored_property("id"),
+            "sourceCode": _stored_property("source_code"),
+            "name": _stored_property("name"),
+        },
+        links=["syntheticLink"],
+    )
+    target_definition = _object_definition(
+        key="SyntheticTarget",
+        table="target_objects",
+        primary_key_property="targetCode",
+        title_property="name",
+        stored_properties={
+            "targetId": _stored_property("id"),
+            "targetCode": _stored_property("target_code"),
+            "name": _stored_property("name"),
+            "status": _stored_property("status"),
+        },
+        links=[],
+    )
+    runtime, _ = _runtime_for_synthetic_link(
+        source_definition=source_definition,
+        target_definition=target_definition,
+        link_definition=_link_definition(
+            key="syntheticLink",
+            source_object_type="SyntheticSource",
+            target_object_type="SyntheticTarget",
+            source_join_property="sourceCode",
+            target_join_property="sourceCode",
+        ),
+    )
+
+    try:
+        runtime.get_all_links("SyntheticSource", "SRC-1")
+    except InvalidOntologyMappingError as exc:
+        assert exc.code == "INVALID_ONTOLOGY_MAPPING"
+        assert exc.details["objectType"] == "SyntheticTarget"
+        assert "unknown target join property" in cast(str, exc.details["reason"]).lower()
+    else:
+        raise AssertionError("Expected invalid ontology mapping error")
+
+
+def test_aggregate_link_route_returns_existing_success_shape(
+    database_client: TestClient,
+) -> None:
+    response = database_client.get("/api/v1/objects/Supplier/S-102/links")
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["source"] == {"objectType": "Supplier", "objectId": "S-102"}
+    assert [link["linkType"] for link in body["links"]] == [
+        "supplierToSupplierParts",
+        "supplierToPurchaseOrders",
+        "supplierToRiskEvents",
+        "supplierSuppliesParts",
+    ]
+    assert body["links"][0]["resolutionStatus"] == "resolved"
+    assert body["links"][1]["resolutionStatus"] == "resolved"
+    assert body["links"][2]["resolutionStatus"] == "resolved"
+    assert body["links"][3] == {
+        "linkType": "supplierSuppliesParts",
+        "targetObjectType": "Part",
+        "cardinality": "many-to-many",
+        "resolutionStatus": "notImplemented",
+        "objects": [],
+    }
+
+
+def test_aggregate_link_route_preserves_target_object_ordering(
+    database_client: TestClient,
+) -> None:
+    response = database_client.get("/api/v1/objects/Supplier/S-102/links")
+
+    assert response.status_code == 200
+    purchase_order_link = next(
+        link
+        for link in response.json()["data"]["links"]
+        if link["linkType"] == "supplierToPurchaseOrders"
+    )
+    assert [item["objectId"] for item in purchase_order_link["objects"]] == [
+        "PO-200",
+        "PO-201",
+        "PO-202",
+        "PO-203",
+        "PO-204",
+    ]
+
+
+def test_aggregate_link_route_returns_empty_objects_for_valid_stored_link(
+    database_client: TestClient,
+) -> None:
+    response = database_client.get("/api/v1/objects/CustomerOrder/ORD-884/links")
+
+    assert response.status_code == 200
+    shipment_link = next(
+        link
+        for link in response.json()["data"]["links"]
+        if link["linkType"] == "customerOrderToShipments"
+    )
+    assert shipment_link["resolutionStatus"] == "resolved"
+    assert shipment_link["objects"] == []
+
+
+def test_aggregate_link_route_uses_target_primary_key_property(
+    database_client: TestClient,
+) -> None:
+    supplier_part_id = str(_seed_uuid("supplier_part", "SP-S102-B"))
+
+    response = database_client.get(f"/api/v1/objects/SupplierPart/{supplier_part_id}/links")
+
+    assert response.status_code == 200
+    supplier_link = next(
+        link
+        for link in response.json()["data"]["links"]
+        if link["linkType"] == "supplierPartToSupplier"
+    )
+    assert supplier_link["resolutionStatus"] == "resolved"
+    assert supplier_link["objects"][0]["objectType"] == "Supplier"
+    assert supplier_link["objects"][0]["objectId"] == "S-102"
+    assert (
+        supplier_link["objects"][0]["properties"]["supplierId"]
+        != supplier_link["objects"][0]["objectId"]
+    )
+
+
+def test_aggregate_link_route_returns_unknown_object_type_error(
+    database_client: TestClient,
+) -> None:
+    response = database_client.get("/api/v1/objects/UnknownType/example/links")
+
+    assert response.status_code == 404
+    assert response.json()["error"] == {
+        "code": "OBJECT_TYPE_NOT_FOUND",
+        "message": "Ontology object type 'UnknownType' was not found.",
+        "details": {"objectType": "UnknownType"},
+    }
+
+
+def test_aggregate_link_route_returns_missing_source_object_error(
+    database_client: TestClient,
+) -> None:
+    response = database_client.get("/api/v1/objects/Supplier/S-DOES-NOT-EXIST/links")
+
+    assert response.status_code == 404
+    assert response.json()["error"] == {
+        "code": "OBJECT_NOT_FOUND",
+        "message": "Supplier object 'S-DOES-NOT-EXIST' was not found.",
+        "details": {
+            "objectType": "Supplier",
+            "objectId": "S-DOES-NOT-EXIST",
+        },
+    }

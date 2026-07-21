@@ -2,13 +2,18 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api.dependencies import get_link_runtime, get_object_runtime
+from app.api.response_contract import build_success_response
 from app.runtime.link_runtime import LinkRuntime
 from app.runtime.object_runtime import ObjectRuntime
-from app.schemas.common import ApiErrorResponse
-from app.schemas.objects import LinkedObjectsResponse, OntologyObjectResponse
+from app.schemas.common import ApiErrorResponse, SuccessResponse
+from app.schemas.objects import (
+    AggregateLinkedObjectsResponse,
+    LinkedObjectsResponse,
+    OntologyObjectResponse,
+)
 
 router = APIRouter()
 
@@ -17,8 +22,29 @@ LinkRuntimeDependency = Annotated[LinkRuntime, Depends(get_link_runtime)]
 
 
 @router.get(
+    "/{object_type}/{object_id}/links",
+    response_model=SuccessResponse[AggregateLinkedObjectsResponse],
+    responses={404: {"model": ApiErrorResponse}, 500: {"model": ApiErrorResponse}},
+)
+def read_object_links(
+    request: Request,
+    object_type: str,
+    object_id: str,
+    runtime: LinkRuntimeDependency,
+) -> SuccessResponse[AggregateLinkedObjectsResponse]:
+    """Return all declared links for one source object."""
+    return build_success_response(
+        request,
+        runtime.get_all_links(
+            object_type=object_type,
+            object_id=object_id,
+        ),
+    )
+
+
+@router.get(
     "/{object_type}/{object_id}/links/{link_type}",
-    response_model=LinkedObjectsResponse,
+    response_model=SuccessResponse[LinkedObjectsResponse],
     responses={
         404: {"model": ApiErrorResponse},
         500: {"model": ApiErrorResponse},
@@ -26,28 +52,36 @@ LinkRuntimeDependency = Annotated[LinkRuntime, Depends(get_link_runtime)]
     },
 )
 def read_linked_objects(
+    request: Request,
     object_type: str,
     object_id: str,
     link_type: str,
     runtime: LinkRuntimeDependency,
-) -> LinkedObjectsResponse:
+) -> SuccessResponse[LinkedObjectsResponse]:
     """Return objects linked from one source object through one declared link."""
-    return runtime.get_linked_objects(
-        object_type=object_type,
-        object_id=object_id,
-        link_type=link_type,
+    return build_success_response(
+        request,
+        runtime.get_linked_objects(
+            object_type=object_type,
+            object_id=object_id,
+            link_type=link_type,
+        ),
     )
 
 
 @router.get(
     "/{object_type}/{object_id}",
-    response_model=OntologyObjectResponse,
+    response_model=SuccessResponse[OntologyObjectResponse],
     responses={404: {"model": ApiErrorResponse}, 500: {"model": ApiErrorResponse}},
 )
 def read_object(
+    request: Request,
     object_type: str,
     object_id: str,
     runtime: ObjectRuntimeDependency,
-) -> OntologyObjectResponse:
+) -> SuccessResponse[OntologyObjectResponse]:
     """Return one ontology object resolved from trusted registry metadata."""
-    return runtime.get_object(object_type=object_type, object_id=object_id)
+    return build_success_response(
+        request,
+        runtime.get_object(object_type=object_type, object_id=object_id),
+    )

@@ -7,16 +7,25 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
+from app.api.response_contract import (
+    REQUEST_ID_HEADER,
+    build_error_response,
+    build_internal_error_response,
+    build_invalid_request_response,
+    get_request_id,
+    resolve_request_id,
+    store_request_id,
+)
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import ApplicationError, AuthorizationDeniedError
 from app.core.logging import configure_logging
 from app.ontology.loader import load_ontology_registry
 from app.runtime.authorization_service import AuthorizationService
-from app.schemas.common import ApiErrorDetail, ApiErrorResponse
 
 logger = logging.getLogger(__name__)
 
@@ -33,31 +42,71 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     yield
 
 
+def _register_request_id_middleware(application: FastAPI) -> None:
+    @application.middleware("http")
+    async def attach_request_id(request: Request, call_next: object) -> Response:
+        request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
+        store_request_id(request, request_id)
+        response = await call_next(request)
+        response.headers[REQUEST_ID_HEADER] = request_id
+        return response
+
+
 def _register_exception_handlers(application: FastAPI) -> None:
     @application.exception_handler(ApplicationError)
     async def handle_application_error(
         request: Request,
         exc: ApplicationError,
     ) -> JSONResponse:
+        request_id = get_request_id(request)
         if isinstance(exc, AuthorizationDeniedError):
             logger.warning(
                 "authorization_denied",
                 extra={
                     "path": request.url.path,
+                    "requestId": request_id,
                     **exc.log_context(),
                 },
             )
-        payload = ApiErrorResponse(
-            error=ApiErrorDetail(
-                code=exc.code,
-                message=exc.message,
-                details=exc.details,
-            )
-        )
-        return JSONResponse(
+        return build_error_response(
+            request,
             status_code=exc.status_code,
-            content=payload.model_dump(mode="json"),
+            code=exc.code,
+            message=exc.message,
+            details=exc.details,
         )
+
+    @application.exception_handler(RequestValidationError)
+    async def handle_request_validation_error(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        logger.warning(
+            "request_validation_failed",
+            extra={
+                "path": request.url.path,
+                "requestId": get_request_id(request),
+            },
+        )
+        return build_invalid_request_response(
+            request,
+            details={"issues": exc.errors()},
+        )
+
+    @application.exception_handler(Exception)
+    async def handle_unexpected_exception(
+        request: Request,
+        exc: Exception,
+    ) -> JSONResponse:
+        logger.exception(
+            "unhandled_exception",
+            extra={
+                "path": request.url.path,
+                "requestId": get_request_id(request),
+            },
+            exc_info=exc,
+        )
+        return build_internal_error_response(request)
 
 
 def create_application() -> FastAPI:
@@ -77,6 +126,7 @@ def create_application() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    _register_request_id_middleware(application)
     _register_exception_handlers(application)
     application.include_router(api_router)
     return application

@@ -1,8 +1,11 @@
 """Shared API schemas."""
 
-from typing import Any
+from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+from typing import Any, Generic, TypeVar
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DatabaseHealth(BaseModel):
@@ -29,7 +32,25 @@ class DatabaseConnectionHealthResponse(BaseModel):
     status: str
 
 
-class ApiErrorDetail(BaseModel):
+class ApiBaseModel(BaseModel):
+    """Shared API model configuration."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+def utc_now() -> datetime:
+    """Return the current timezone-aware UTC timestamp."""
+    return datetime.now(timezone.utc)
+
+
+class ResponseMeta(ApiBaseModel):
+    """Shared metadata returned with API success and error envelopes."""
+
+    request_id: str = Field(alias="requestId")
+    timestamp: datetime = Field(default_factory=utc_now)
+
+
+class ApiErrorDetail(ApiBaseModel):
     """Structured API error payload."""
 
     code: str
@@ -37,7 +58,18 @@ class ApiErrorDetail(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
-class ApiErrorResponse(BaseModel):
+class ApiErrorResponse(ApiBaseModel):
     """Structured API error response."""
 
     error: ApiErrorDetail
+    meta: ResponseMeta
+
+
+ResponseDataT = TypeVar("ResponseDataT")
+
+
+class SuccessResponse(ApiBaseModel, Generic[ResponseDataT]):
+    """Structured API success response."""
+
+    data: ResponseDataT
+    meta: ResponseMeta
