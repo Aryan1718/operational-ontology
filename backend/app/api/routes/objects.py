@@ -12,6 +12,8 @@ from app.schemas.common import ApiErrorResponse, SuccessResponse
 from app.schemas.objects import (
     AggregateLinkedObjectsResponse,
     LinkedObjectsResponse,
+    ObjectSearchRequest,
+    ObjectSearchResponse,
     OntologyObjectResponse,
 )
 
@@ -19,6 +21,31 @@ router = APIRouter()
 
 ObjectRuntimeDependency = Annotated[ObjectRuntime, Depends(get_object_runtime)]
 LinkRuntimeDependency = Annotated[LinkRuntime, Depends(get_link_runtime)]
+
+
+@router.post(
+    "/{object_type}/search",
+    response_model=SuccessResponse[ObjectSearchResponse],
+    responses={
+        422: {"model": ApiErrorResponse},
+        404: {"model": ApiErrorResponse},
+        500: {"model": ApiErrorResponse},
+    },
+)
+def search_objects(
+    request: Request,
+    object_type: str,
+    search_request: ObjectSearchRequest,
+    runtime: ObjectRuntimeDependency,
+) -> SuccessResponse[ObjectSearchResponse]:
+    """Search one ontology object type using structured criteria."""
+    result = runtime.search_objects(object_type=object_type, request=search_request)
+    return build_success_response(
+        request,
+        result.response,
+        next_cursor=result.next_cursor,
+        has_more=result.has_more,
+    )
 
 
 @router.get(

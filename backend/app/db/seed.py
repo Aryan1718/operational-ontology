@@ -87,7 +87,7 @@ class SeedResult:
 SUPPLIER_DATA = [
     {"code": "S-101", "name": "Northstar Components", "country": "United States", "region": "West", "status": "active", "reliability_score": Decimal("94.00"), "default_lead_time_days": 4},
     {"code": "S-102", "name": "Vertex Electronics", "country": "United States", "region": "West", "status": "active", "reliability_score": Decimal("72.00"), "default_lead_time_days": 5},
-    {"code": "S-103", "name": "Midwest Power Systems", "country": "United States", "region": "Central", "status": "active", "reliability_score": Decimal("91.00"), "default_lead_time_days": 3},
+    {"code": "S-103", "name": "Midwest Power Systems", "country": "United States", "region": "Central", "status": "delayed", "reliability_score": Decimal("91.00"), "default_lead_time_days": 3},
 ]
 
 PART_DATA = [

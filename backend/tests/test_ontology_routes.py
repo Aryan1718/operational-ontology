@@ -71,3 +71,41 @@ def test_other_metadata_collection_endpoints_return_success(client: TestClient) 
         payload = response.json()["data"]
         assert "items" in payload
         assert "count" in payload
+
+
+def test_link_type_detail_endpoint_returns_one_definition(client: TestClient) -> None:
+    response = client.get("/api/v1/ontology/link-types/supplierToPurchaseOrders")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["key"] == "supplierToPurchaseOrders"
+    assert payload["sourceObjectType"] == "Supplier"
+    assert payload["targetObjectType"] == "PurchaseOrder"
+
+
+def test_function_detail_endpoint_returns_one_definition(client: TestClient) -> None:
+    response = client.get("/api/v1/ontology/functions/findImpactedOrders")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["key"] == "findImpactedOrders"
+    assert payload["handler"] == "findImpactedOrders"
+
+
+def test_action_type_detail_endpoint_returns_one_definition(client: TestClient) -> None:
+    response = client.get("/api/v1/ontology/action-types/createRiskEvent")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["key"] == "createRiskEvent"
+    assert payload["targetObjectType"] == "RiskEvent"
+
+
+def test_role_detail_endpoint_returns_one_definition(client: TestClient) -> None:
+    response = client.get("/api/v1/ontology/roles/Viewer")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["key"] == "Viewer"
+    assert payload["displayName"] == "Viewer"
+

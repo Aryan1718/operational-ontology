@@ -138,47 +138,70 @@ objectTypes:
         type: string
         required: true
         readOnly: true
+        searchable: true
+        filterable: true
+        sortable: true
       name:
         sourceColumn: name
         type: string
         required: true
         readOnly: true
+        searchable: true
+        filterable: true
+        sortable: true
       country:
         sourceColumn: country
         type: string
         required: false
         readOnly: true
+        searchable: true
+        filterable: true
+        sortable: true
       region:
         sourceColumn: region
         type: string
         required: false
         readOnly: true
+        searchable: true
+        filterable: true
+        sortable: true
       status:
         sourceColumn: status
         type: enum
         enum: supplierStatus
         required: true
         readOnly: true
+        searchable: true
+        filterable: true
+        sortable: true
       reliabilityScore:
         sourceColumn: reliability_score
         type: number
         required: false
         readOnly: true
+        filterable: true
+        sortable: true
       defaultLeadTimeDays:
         sourceColumn: default_lead_time_days
         type: integer
         required: false
         readOnly: true
+        filterable: true
+        sortable: true
       createdAt:
         sourceColumn: created_at
         type: datetime
         required: true
         readOnly: true
+        filterable: true
+        sortable: true
       updatedAt:
         sourceColumn: updated_at
         type: datetime
         required: true
         readOnly: true
+        filterable: true
+        sortable: true
     links:
       - supplierToSupplierParts
       - supplierToPurchaseOrders

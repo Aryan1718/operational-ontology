@@ -30,14 +30,31 @@ def test_object_route_delegates_to_runtime() -> None:
                 "properties": {"name": "Stub Object"},
             }
 
+        def search_objects(self, object_type: str, request: object) -> object:
+            calls.append((object_type, "search"))
+            return type(
+                "Result",
+                (),
+                {
+                    "response": {
+                        "objectType": object_type,
+                        "objects": [],
+                    },
+                    "next_cursor": None,
+                    "has_more": False,
+                },
+            )()
+
     app.dependency_overrides[get_object_runtime] = lambda: StubRuntime()
 
     with TestClient(app) as client:
         response = client.get("/api/v1/objects/Supplier/S-102")
+        search_response = client.post("/api/v1/objects/Supplier/search", json={})
 
     assert response.status_code == 200
     assert response.json()["data"]["objectId"] == "S-102"
-    assert calls == [("Supplier", "S-102")]
+    assert search_response.status_code == 200
+    assert calls == [("Supplier", "S-102"), ("Supplier", "search")]
 
 
 def test_object_runtime_reads_supplier_from_real_seeded_database(
@@ -115,6 +132,158 @@ def test_part_endpoint_returns_seeded_business_identifier(
     }
 
 
+def test_supplier_search_endpoint_returns_seeded_results(
+    database_client: TestClient,
+) -> None:
+    response = database_client.post("/api/v1/objects/Supplier/search", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["data"]["objectType"] == "Supplier"
+    assert [item["objectId"] for item in body["data"]["objects"]] == [
+        "S-101",
+        "S-102",
+        "S-103",
+    ]
+    assert body["meta"]["hasMore"] is False
+    assert body["meta"]["nextCursor"] is None
+
+
+def test_supplier_search_endpoint_filters_delayed_records(
+    database_client: TestClient,
+) -> None:
+    response = database_client.post(
+        "/api/v1/objects/Supplier/search",
+        json={
+            "filters": [
+                {"property": "status", "operator": "equals", "value": "delayed"}
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["objectId"] for item in response.json()["data"]["objects"]] == [
+        "S-103"
+    ]
+
+
+def test_supplier_search_endpoint_sorts_results(
+    database_client: TestClient,
+) -> None:
+    response = database_client.post(
+        "/api/v1/objects/Supplier/search",
+        json={
+            "sort": [
+                {"property": "reliabilityScore", "direction": "asc"}
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert [item["objectId"] for item in response.json()["data"]["objects"]] == [
+        "S-102",
+        "S-103",
+        "S-101",
+    ]
+
+
+def test_supplier_search_endpoint_supports_cursor_pagination(
+    database_client: TestClient,
+) -> None:
+    first_response = database_client.post(
+        "/api/v1/objects/Supplier/search",
+        json={
+            "sort": [{"property": "supplierCode", "direction": "asc"}],
+            "limit": 1,
+        },
+        headers={"X-Request-Id": "req_search_page_1"},
+    )
+
+    assert first_response.status_code == 200
+    first_body = first_response.json()
+    assert [item["objectId"] for item in first_body["data"]["objects"]] == ["S-101"]
+    assert first_body["meta"]["hasMore"] is True
+    assert first_body["meta"]["nextCursor"]
+    assert first_body["meta"]["requestId"] == "req_search_page_1"
+    assert first_response.headers["X-Request-Id"] == "req_search_page_1"
+
+    second_response = database_client.post(
+        "/api/v1/objects/Supplier/search",
+        json={
+            "sort": [{"property": "supplierCode", "direction": "asc"}],
+            "limit": 1,
+            "cursor": first_body["meta"]["nextCursor"],
+        },
+    )
+
+    assert second_response.status_code == 200
+    second_body = second_response.json()
+    assert [item["objectId"] for item in second_body["data"]["objects"]] == ["S-102"]
+    assert second_body["meta"]["hasMore"] is True
+
+
+def test_supplier_search_route_returns_unknown_object_type_error(
+    database_client: TestClient,
+) -> None:
+    response = database_client.post("/api/v1/objects/UnknownType/search", json={})
+
+    assert response.status_code == 404
+    assert response.json()["error"] == {
+        "code": "OBJECT_TYPE_NOT_FOUND",
+        "message": "Ontology object type 'UnknownType' was not found.",
+        "details": {"objectType": "UnknownType"},
+    }
+
+
+def test_supplier_search_route_returns_invalid_property_error(
+    database_client: TestClient,
+) -> None:
+    response = database_client.post(
+        "/api/v1/objects/Supplier/search",
+        json={
+            "filters": [
+                {"property": "unknown", "operator": "equals", "value": "x"}
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"]["code"] == "INVALID_REQUEST"
+    assert body["error"]["details"]["property"] == "unknown"
+
+
+def test_supplier_search_route_returns_invalid_operator_error(
+    database_client: TestClient,
+) -> None:
+    response = database_client.post(
+        "/api/v1/objects/Supplier/search",
+        json={
+            "filters": [
+                {"property": "status", "operator": "contains", "value": "delay"}
+            ]
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"]["code"] == "INVALID_REQUEST"
+    assert body["error"]["details"]["property"] == "status"
+    assert body["error"]["details"]["reason"] == "Unsupported operator for property type."
+
+
+def test_supplier_search_route_uses_success_envelope_and_generates_request_id(
+    database_client: TestClient,
+) -> None:
+    response = database_client.post("/api/v1/objects/Supplier/search", json={})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body.keys()) == {"data", "meta"}
+    assert body["meta"]["requestId"] == response.headers["X-Request-Id"]
+    assert body["meta"]["requestId"]
+
+
 def test_object_route_returns_not_found_for_missing_business_identifier(
     database_client: TestClient,
 ) -> None:
@@ -181,3 +350,13 @@ def test_object_runtime_invalid_mapping_uses_new_exception_code(
         assert exc.details["objectType"] == "InventoryTransfer"
     else:
         raise AssertionError("Expected invalid ontology mapping error")
+
+
+def test_existing_link_endpoint_remains_unchanged(database_client: TestClient) -> None:
+    response = database_client.get("/api/v1/objects/Supplier/S-102/links")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["source"] == {
+        "objectType": "Supplier",
+        "objectId": "S-102",
+    }

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
@@ -25,6 +26,7 @@ def test_generated_request_id_is_returned_in_success_body_and_header(
     assert response.status_code == 200
     request_id = response.headers["X-Request-Id"]
     assert request_id
+    assert str(UUID(request_id)) == request_id
     assert response.json()["meta"]["requestId"] == request_id
 
 
@@ -132,16 +134,20 @@ def test_unexpected_errors_use_internal_error_envelope_without_message_leak() ->
     _parse_utc_timestamp(body["meta"]["timestamp"])
 
 
-def test_openapi_documents_success_envelope_for_object_route(client: TestClient) -> None:
+def test_openapi_documents_success_envelope_for_object_route(
+    client: TestClient,
+) -> None:
     response = client.get("/openapi.json")
 
     assert response.status_code == 200
     schema = response.json()
-    response_schema = schema["paths"]["/api/v1/objects/{object_type}/{object_id}"]["get"][
-        "responses"
-    ]["200"]["content"]["application/json"]["schema"]
+    response_schema = schema["paths"][
+        "/api/v1/objects/{object_type}/{object_id}"
+    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
     component_name = response_schema["$ref"].split("/")[-1]
     component = schema["components"]["schemas"][component_name]
 
-    assert component["properties"]["data"]["$ref"].endswith("/OntologyObjectResponse")
+    assert component["properties"]["data"]["$ref"].endswith(
+        "/OntologyObjectResponse"
+    )
     assert component["properties"]["meta"]["$ref"].endswith("/ResponseMeta")

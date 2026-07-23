@@ -11,8 +11,10 @@ from app.core.exceptions import (
 )
 from app.ontology.registry import OntologyRegistry
 from app.repositories.object_repository import ObjectRepository
-from app.runtime.object_runtime import ObjectRuntime
+from app.runtime.object_runtime import LoadedOntologyObject, ObjectRuntime
 from app.schemas.objects import (
+    AggregateLinkObjectsResponse,
+    AggregateLinkedObjectsResponse,
     LinkedObjectsResponse,
     OntologyObjectReference,
     OntologyObjectResponse,
@@ -61,6 +63,80 @@ class LinkRuntime:
         if link_definition.kind != "stored":
             raise LinkResolutionNotImplementedError(link_type, link_definition.kind)
 
+        return self._resolve_stored_link_from_source(
+            source_object=source_object,
+            source_response=source_response,
+            link_definition=link_definition,
+        )
+
+    def get_all_links(
+        self,
+        object_type: str,
+        object_id: str,
+    ) -> AggregateLinkedObjectsResponse:
+        """Return all declared links for one source object."""
+        source_object = self._object_runtime.load_object(object_type, object_id)
+        source_response = self._object_runtime.map_loaded_object(source_object)
+
+        links: list[AggregateLinkObjectsResponse] = []
+        for link_key in source_object.definition.links:
+            link_definition = self._registry.get_link_type(link_key)
+            if link_definition is None:
+                raise InvalidOntologyMappingError(
+                    source_object.definition.key,
+                    f"Declared link '{link_key}' was not found in the ontology registry.",
+                )
+            if link_definition.sourceObjectType != source_object.definition.key:
+                raise InvalidOntologyMappingError(
+                    source_object.definition.key,
+                    (
+                        f"Link '{link_definition.key}' declares source object type "
+                        f"'{link_definition.sourceObjectType}' but is attached to "
+                        f"'{source_object.definition.key}'."
+                    ),
+                )
+            if link_definition.kind != "stored":
+                links.append(
+                    AggregateLinkObjectsResponse(
+                        linkType=link_definition.key,
+                        targetObjectType=link_definition.targetObjectType,
+                        cardinality=link_definition.cardinality,
+                        resolutionStatus="notImplemented",
+                        objects=[],
+                    )
+                )
+                continue
+
+            resolved_link = self._resolve_stored_link_from_source(
+                source_object=source_object,
+                source_response=source_response,
+                link_definition=link_definition,
+            )
+            links.append(
+                AggregateLinkObjectsResponse(
+                    linkType=resolved_link.linkType,
+                    targetObjectType=resolved_link.targetObjectType,
+                    cardinality=resolved_link.cardinality,
+                    resolutionStatus="resolved",
+                    objects=resolved_link.objects,
+                )
+            )
+
+        return AggregateLinkedObjectsResponse(
+            source=OntologyObjectReference(
+                objectType=source_response.objectType,
+                objectId=source_response.objectId,
+            ),
+            links=links,
+        )
+
+    def _resolve_stored_link_from_source(
+        self,
+        *,
+        source_object: LoadedOntologyObject,
+        source_response: OntologyObjectResponse,
+        link_definition: OntologyLinkTypeDefinition,
+    ) -> LinkedObjectsResponse:
         target_definition = self._registry.get_object_type(link_definition.targetObjectType)
         if target_definition is None:
             raise InvalidOntologyMappingError(
@@ -87,6 +163,9 @@ class LinkRuntime:
 
         self._validate_stored_link_storage(
             link_definition=link_definition,
+            source_definition=source_object.definition,
+            source_model=source_object.mapping.model,
+            source_property=source_property,
             target_definition=target_definition,
             target_model=target_mapping.model,
             target_property=target_property,
@@ -155,6 +234,9 @@ class LinkRuntime:
         self,
         *,
         link_definition: OntologyLinkTypeDefinition,
+        source_definition: OntologyObjectTypeDefinition,
+        source_model: type[Any],
+        source_property: OntologyPropertyDefinition,
         target_definition: OntologyObjectTypeDefinition,
         target_model: type[Any],
         target_property: OntologyPropertyDefinition,
@@ -165,35 +247,52 @@ class LinkRuntime:
                 target_definition.key,
                 f"Link '{link_definition.key}' is missing stored link metadata.",
             )
-        if storage.table != target_definition.source.table:
-            raise InvalidOntologyMappingError(
-                target_definition.key,
-                (
-                    f"Link '{link_definition.key}' storage table does not match "
-                    "the target object source table."
-                ),
-            )
-        if storage.sourceColumn != target_property.sourceColumn:
-            raise InvalidOntologyMappingError(
-                target_definition.key,
-                (
-                    f"Link '{link_definition.key}' storage column does not match "
-                    "the target join property column."
-                ),
-            )
-        self._require_column(
-            object_definition=target_definition,
-            model=target_model,
-            column_name=storage.sourceColumn,
-            field_name="stored link column",
-        )
-        for row_filter_column in storage.rowFilter or {}:
+
+        if (
+            storage.table == target_definition.source.table
+            and storage.sourceColumn == target_property.sourceColumn
+        ):
             self._require_column(
                 object_definition=target_definition,
                 model=target_model,
-                column_name=row_filter_column,
-                field_name="stored link row filter column",
+                column_name=storage.sourceColumn,
+                field_name="stored link column",
             )
+            for row_filter_column in storage.rowFilter or {}:
+                self._require_column(
+                    object_definition=target_definition,
+                    model=target_model,
+                    column_name=row_filter_column,
+                    field_name="stored link row filter column",
+                )
+            return
+
+        if (
+            storage.table == source_definition.source.table
+            and storage.sourceColumn == source_property.sourceColumn
+        ):
+            self._require_column(
+                object_definition=source_definition,
+                model=source_model,
+                column_name=storage.sourceColumn,
+                field_name="stored link column",
+            )
+            for row_filter_column in storage.rowFilter or {}:
+                self._require_column(
+                    object_definition=source_definition,
+                    model=source_model,
+                    column_name=row_filter_column,
+                    field_name="stored link row filter column",
+                )
+            return
+
+        raise InvalidOntologyMappingError(
+            target_definition.key,
+            (
+                f"Link '{link_definition.key}' storage does not match either the "
+                "source join property column or the target join property column."
+            ),
+        )
 
     def _read_property_value(
         self,

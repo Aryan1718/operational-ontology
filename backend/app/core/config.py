@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     database_port: int = Field(default=5432, alias="DATABASE_PORT")
     database_name: str = Field(default="ontology_dev", alias="DATABASE_NAME")
     database_user: str = Field(default="postgres", alias="DATABASE_USER")
-    database_password: str = Field(default="postgres", alias="DATABASE_PASSWORD")
+    database_password: str = Field(default="change_me", alias="DATABASE_PASSWORD")
     database_url_override: str | None = Field(default=None, alias="DATABASE_URL")
     backend_cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:3000"],
