@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -26,8 +26,17 @@ from app.core.exceptions import ApplicationError, AuthorizationDeniedError
 from app.core.logging import configure_logging
 from app.ontology.loader import load_ontology_registry
 from app.runtime.authorization_service import AuthorizationService
+from app.runtime.function_registry import build_function_handler_registry
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_registered_function_handlers(application: FastAPI) -> None:
+    handler_registry = application.state.function_handler_registry
+    registry = application.state.ontology_registry
+    for function_definition in registry.functions:
+        if function_definition.handler == 'getInventoryAvailability':
+            handler_registry.require(function_definition.handler)
 
 
 @asynccontextmanager
@@ -36,15 +45,21 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     ontology_registry = load_ontology_registry()
     authorization_service = AuthorizationService(ontology_registry.permission_registry)
+    function_handler_registry = build_function_handler_registry()
     application.state.ontology_registry = ontology_registry
     application.state.permission_registry = ontology_registry.permission_registry
     application.state.authorization_service = authorization_service
+    application.state.function_handler_registry = function_handler_registry
+    _validate_registered_function_handlers(application)
     yield
 
 
 def _register_request_id_middleware(application: FastAPI) -> None:
     @application.middleware("http")
-    async def attach_request_id(request: Request, call_next: object) -> Response:
+    async def attach_request_id(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
         store_request_id(request, request_id)
         response = await call_next(request)

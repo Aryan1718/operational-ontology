@@ -1,1 +1,1 @@
-"""Future ontology function handlers package."""
+"""Ontology function handler package."""

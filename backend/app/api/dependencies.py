@@ -7,13 +7,20 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
+from app.functions.registry import FunctionHandlerRegistry
+from app.ontology.actor_context import (
+    ActorContext,
+    ActorType,
+    InvocationSource,
+    OntologyRole,
+)
 from app.ontology.permission_registry import PermissionRegistry
 from app.ontology.registry import OntologyRegistry
 from app.repositories.object_repository import ObjectRepository
 from app.runtime.authorization_service import AuthorizationService
+from app.runtime.function_engine import FunctionEngine
 from app.runtime.link_runtime import LinkRuntime
 from app.runtime.object_runtime import ObjectRuntime
-
 
 DbSessionDependency = Annotated[Session, Depends(get_db_session)]
 
@@ -36,6 +43,21 @@ def get_permission_registry(request: Request) -> PermissionRegistry:
 def get_authorization_service(request: Request) -> AuthorizationService:
     """Provide the shared central authorization service from app state."""
     return cast(AuthorizationService, request.app.state.authorization_service)
+
+
+def get_function_handler_registry(request: Request) -> FunctionHandlerRegistry:
+    """Provide the immutable function handler registry from app state."""
+    return cast(FunctionHandlerRegistry, request.app.state.function_handler_registry)
+
+
+def get_request_actor_context() -> ActorContext:
+    """Provide a narrow trusted actor seam until authentication is implemented."""
+    return ActorContext(
+        actor_id='api-viewer',
+        actor_type=ActorType.HUMAN,
+        roles=(OntologyRole.VIEWER,),
+        invocation_source=InvocationSource.API,
+    )
 
 
 def get_object_runtime(
@@ -65,4 +87,17 @@ def get_link_runtime(
         registry=registry,
         repository=repository,
         object_runtime=object_runtime,
+    )
+
+
+def get_function_engine(
+    request: Request,
+    session: DbSessionDependency,
+) -> FunctionEngine:
+    """Provide the per-request Function Engine backed by the current DB session."""
+    return FunctionEngine(
+        registry=get_ontology_registry(request),
+        authorization_service=get_authorization_service(request),
+        handler_registry=get_function_handler_registry(request),
+        session=session,
     )

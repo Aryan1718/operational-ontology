@@ -2165,6 +2165,9 @@ functions:
     displayName: Get Inventory Availability
     description: Return current inventory availability for the requested business context.
     handler: getInventoryAvailability
+    readOnly: true
+    inputModel: GetInventoryAvailabilityParameters
+    outputModel: InventoryAvailabilityItemList
   findAlternativeWarehouses:
     key: findAlternativeWarehouses
     displayName: Find Alternative Warehouses
