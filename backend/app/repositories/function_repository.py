@@ -528,3 +528,181 @@ class FunctionRepository:
                 )
             )
         return rows
+
+@dataclass(frozen=True, slots=True)
+class PartInventoryPositionRow:
+    """One part inventory position resolved for a specific warehouse."""
+
+    available_quantity: Decimal
+    safety_stock_quantity: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class StockoutPurchaseOrderRow:
+    """One open inbound purchase-order movement for stockout risk."""
+
+    purchase_order_id: str
+    expected_delivery_date: date
+    open_quantity: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class StockoutDemandRow:
+    """One dated part-demand movement for stockout risk."""
+
+    order_id: str
+    required_date: date
+    demand_quantity: Decimal
+
+
+
+def _warehouse_exists(self: FunctionRepository, warehouse_id: str) -> bool:
+    statement = select(Warehouse.id).where(Warehouse.warehouse_code == warehouse_id)
+    return self._session.execute(statement).scalar_one_or_none() is not None
+
+
+
+def _get_part_inventory_position(
+    self: FunctionRepository,
+    part_id: str,
+    warehouse_id: str,
+) -> PartInventoryPositionRow | None:
+    statement = (
+        select(Inventory)
+        .join(Part, Part.id == Inventory.part_id)
+        .join(Warehouse, Warehouse.id == Inventory.warehouse_id)
+        .where(
+            Inventory.item_type == "part",
+            Part.part_code == part_id,
+            Warehouse.warehouse_code == warehouse_id,
+        )
+    )
+    inventory = self._session.execute(statement).scalar_one_or_none()
+    if inventory is None:
+        return None
+    return PartInventoryPositionRow(
+        available_quantity=max(ZERO, inventory.on_hand_quantity - inventory.reserved_quantity),
+        safety_stock_quantity=inventory.safety_stock_quantity,
+    )
+
+
+
+def _get_open_inbound_purchase_orders_for_part_warehouse(
+    self: FunctionRepository,
+    part_id: str,
+    warehouse_id: str,
+    horizon_date: date,
+) -> list[StockoutPurchaseOrderRow]:
+    statement = (
+        select(PurchaseOrder, PurchaseOrderItem)
+        .join(PurchaseOrderItem, PurchaseOrderItem.purchase_order_id == PurchaseOrder.id)
+        .join(Part, Part.id == PurchaseOrderItem.part_id)
+        .join(Warehouse, Warehouse.id == Inventory.warehouse_id)
+    )
+    statement = (
+        select(PurchaseOrder, PurchaseOrderItem, Warehouse)
+        .join(PurchaseOrderItem, PurchaseOrderItem.purchase_order_id == PurchaseOrder.id)
+        .join(Part, Part.id == PurchaseOrderItem.part_id)
+        .join(Inventory, Inventory.part_id == Part.id)
+        .join(Warehouse, Warehouse.id == Inventory.warehouse_id)
+        .where(
+            PurchaseOrder.status.in_(OPEN_PURCHASE_ORDER_STATUSES),
+            PurchaseOrder.expected_delivery_date.is_not(None),
+            PurchaseOrder.expected_delivery_date <= horizon_date,
+            Inventory.item_type == "part",
+            Part.part_code == part_id,
+            Warehouse.warehouse_code == warehouse_id,
+        )
+        .order_by(
+            PurchaseOrder.expected_delivery_date.asc(),
+            PurchaseOrder.purchase_order_code.asc(),
+            PurchaseOrderItem.id.asc(),
+        )
+    )
+    rows: list[StockoutPurchaseOrderRow] = []
+    for purchase_order, item, _warehouse in self._session.execute(statement).all():
+        open_quantity = max(ZERO, item.quantity_ordered - item.quantity_received)
+        if open_quantity <= ZERO or purchase_order.expected_delivery_date is None:
+            continue
+        rows.append(
+            StockoutPurchaseOrderRow(
+                purchase_order_id=purchase_order.purchase_order_code,
+                expected_delivery_date=purchase_order.expected_delivery_date,
+                open_quantity=open_quantity,
+            )
+        )
+    return rows
+
+
+
+def _get_open_part_demands_for_warehouse(
+    self: FunctionRepository,
+    part_id: str,
+    warehouse_id: str,
+    horizon_date: date,
+) -> list[StockoutDemandRow]:
+    statement = (
+        select(
+            CustomerOrder.order_code,
+            CustomerOrder.requested_delivery_date,
+            CustomerOrderItem.quantity_ordered,
+            CustomerOrderItem.quantity_allocated,
+            ProductBomItem.quantity_required,
+        )
+        .join(CustomerOrderItem, CustomerOrderItem.order_id == CustomerOrder.id)
+        .join(Product, Product.id == CustomerOrderItem.product_id)
+        .join(ProductBomItem, ProductBomItem.product_id == Product.id)
+        .join(Part, Part.id == ProductBomItem.part_id)
+        .join(Shipment, Shipment.order_id == CustomerOrder.id)
+        .join(Warehouse, Warehouse.id == Shipment.warehouse_id)
+        .where(
+            CustomerOrder.status.in_(OPEN_CUSTOMER_ORDER_STATUSES),
+            Shipment.status.in_(OPEN_SHIPMENT_STATUSES),
+            Product.status == ACTIVE_PRODUCT_STATUS,
+            Part.status == ACTIVE_PART_STATUS,
+            Part.part_code == part_id,
+            Warehouse.warehouse_code == warehouse_id,
+            CustomerOrder.requested_delivery_date <= horizon_date,
+        )
+        .order_by(
+            CustomerOrder.requested_delivery_date.asc(),
+            CustomerOrder.order_code.asc(),
+            CustomerOrderItem.id.asc(),
+        )
+    )
+    rows: list[StockoutDemandRow] = []
+    for order_code, required_date, quantity_ordered, quantity_allocated, quantity_required in self._session.execute(statement).all():
+        remaining_quantity = max(ZERO, quantity_ordered - quantity_allocated)
+        if remaining_quantity <= ZERO:
+            continue
+        rows.append(
+            StockoutDemandRow(
+                order_id=order_code,
+                required_date=required_date,
+                demand_quantity=remaining_quantity * quantity_required,
+            )
+        )
+    return rows
+
+
+
+def _get_highest_bom_criticality_for_part(self: FunctionRepository, part_id: str) -> str | None:
+    statement = (
+        select(Part.criticality)
+        .join(ProductBomItem, ProductBomItem.part_id == Part.id)
+        .join(Product, Product.id == ProductBomItem.product_id)
+        .where(
+            Part.part_code == part_id,
+            Part.status == ACTIVE_PART_STATUS,
+            Product.status == ACTIVE_PRODUCT_STATUS,
+        )
+        .limit(1)
+    )
+    return self._session.execute(statement).scalar_one_or_none()
+
+
+FunctionRepository.warehouse_exists = _warehouse_exists
+FunctionRepository.get_part_inventory_position = _get_part_inventory_position
+FunctionRepository.get_open_inbound_purchase_orders_for_part_warehouse = _get_open_inbound_purchase_orders_for_part_warehouse
+FunctionRepository.get_open_part_demands_for_warehouse = _get_open_part_demands_for_warehouse
+FunctionRepository.get_highest_bom_criticality_for_part = _get_highest_bom_criticality_for_part

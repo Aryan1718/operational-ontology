@@ -7,9 +7,11 @@ from app.functions.impacts import (
     find_impacted_parts,
     find_impacted_products,
 )
-from app.functions.inventory import get_inventory_availability
+from app.functions.inventory import calculate_stockout_risk, get_inventory_availability
 from app.functions.registry import FunctionHandlerRegistry, RegisteredFunctionHandler
 from app.schemas.functions import (
+    CalculateStockoutRiskParameters,
+    CalculateStockoutRiskResult,
     FindImpactedOrdersParameters,
     FindImpactedOrdersResult,
     FindImpactedPartsParameters,
@@ -42,6 +44,12 @@ def build_function_handler_registry() -> FunctionHandlerRegistry:
                 input_model=FindImpactedOrdersParameters,
                 output_model=FindImpactedOrdersResult,
                 execute=find_impacted_orders,
+            ),
+            "calculateStockoutRisk": RegisteredFunctionHandler(
+                handler_name="calculateStockoutRisk",
+                input_model=CalculateStockoutRiskParameters,
+                output_model=CalculateStockoutRiskResult,
+                execute=calculate_stockout_risk,
             ),
             "getInventoryAvailability": RegisteredFunctionHandler(
                 handler_name="getInventoryAvailability",

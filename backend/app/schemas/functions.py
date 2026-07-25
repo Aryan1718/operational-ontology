@@ -169,6 +169,73 @@ class GetInventoryAvailabilityParameters(ApiBaseModel):
     part_id: str = Field(alias="partId", strict=True, min_length=1)
 
 
+class CalculateStockoutRiskParameters(ApiBaseModel):
+    """Stable public input for calculateStockoutRisk."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    part_id: str = Field(alias="partId", strict=True, min_length=1)
+    warehouse_id: str = Field(alias="warehouseId", strict=True, min_length=1)
+    horizon_date: date = Field(alias="horizonDate")
+
+
+class StockoutRiskScoreComponent(ApiBaseModel):
+    """One weighted scoring component for stockout risk."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    raw_score: Decimal = Field(alias="rawScore")
+    weight: Decimal
+    weighted_score: Decimal = Field(alias="weightedScore")
+
+
+class StockoutRiskScoreBreakdown(ApiBaseModel):
+    """Explainability fields for the stockout risk score."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    shortage_severity: StockoutRiskScoreComponent = Field(alias="shortageSeverity")
+    stockout_urgency: StockoutRiskScoreComponent = Field(alias="stockoutUrgency")
+    safety_stock_breach: StockoutRiskScoreComponent = Field(alias="safetyStockBreach")
+    part_criticality: StockoutRiskScoreComponent = Field(alias="partCriticality")
+
+
+class StockoutRiskLedgerEntry(ApiBaseModel):
+    """One dated movement in the stockout projection ledger."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    date: date
+    movement_type: str = Field(alias="movementType", min_length=1)
+    reference_id: str = Field(alias="referenceId", min_length=1)
+    quantity: Decimal
+    running_quantity: Decimal = Field(alias="runningQuantity")
+
+
+class CalculateStockoutRiskResult(ApiBaseModel):
+    """Stable public output for calculateStockoutRisk."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    part_id: str = Field(alias="partId", min_length=1)
+    warehouse_id: str = Field(alias="warehouseId", min_length=1)
+    horizon_date: date = Field(alias="horizonDate")
+    current_available_quantity: Decimal = Field(alias="currentAvailableQuantity")
+    projected_inbound_quantity: Decimal = Field(alias="projectedInboundQuantity")
+    projected_demand_quantity: Decimal = Field(alias="projectedDemandQuantity")
+    projected_ending_quantity: Decimal = Field(alias="projectedEndingQuantity")
+    safety_stock_quantity: Decimal = Field(alias="safetyStockQuantity")
+    shortage_quantity: Decimal = Field(alias="shortageQuantity")
+    safety_stock_breach_date: date | None = Field(alias="safetyStockBreachDate", default=None)
+    stockout_date: date | None = Field(alias="stockoutDate", default=None)
+    days_until_stockout: int | None = Field(alias="daysUntilStockout", default=None)
+    risk_score: int = Field(alias="riskScore", ge=0, le=100)
+    risk_level: str = Field(alias="riskLevel", min_length=1)
+    score_breakdown: StockoutRiskScoreBreakdown = Field(alias="scoreBreakdown")
+    ledger: list[StockoutRiskLedgerEntry] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class WarehouseAvailabilityEntry(ApiBaseModel):
     """Warehouse-level availability for one part."""
 

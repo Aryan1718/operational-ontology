@@ -35,7 +35,7 @@ def _validate_registered_function_handlers(application: FastAPI) -> None:
     handler_registry = application.state.function_handler_registry
     registry = application.state.ontology_registry
     for function_definition in registry.functions:
-        if function_definition.handler in {'getInventoryAvailability', 'findImpactedParts', 'findImpactedProducts', 'findImpactedOrders'}:
+        if function_definition.handler in {'getInventoryAvailability', 'calculateStockoutRisk', 'findImpactedParts', 'findImpactedProducts', 'findImpactedOrders'}:
             handler_registry.require(function_definition.handler)
 
 
@@ -148,5 +148,6 @@ def create_application() -> FastAPI:
 
 
 app = create_application()
+
 
 

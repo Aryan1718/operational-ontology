@@ -2314,3 +2314,86 @@ functions:
                 type: array
                 items:
                   type: string
+  calculateStockoutRisk:
+    key: calculateStockoutRisk
+    displayName: Calculate Stockout Risk
+    description: Calculate projected stockout risk for a part at a warehouse.
+    handler: calculateStockoutRisk
+    readOnly: true
+    inputModel: CalculateStockoutRiskParameters
+    outputModel: CalculateStockoutRiskResult
+    parameters:
+      type: object
+      required:
+        - partId
+        - warehouseId
+        - horizonDate
+      properties:
+        partId:
+          type: string
+          minLength: 1
+        warehouseId:
+          type: string
+          minLength: 1
+        horizonDate:
+          type: string
+          format: date
+    returns:
+      type: object
+      required:
+        - partId
+        - warehouseId
+        - horizonDate
+        - currentAvailableQuantity
+        - projectedInboundQuantity
+        - projectedDemandQuantity
+        - projectedEndingQuantity
+        - safetyStockQuantity
+        - shortageQuantity
+        - riskScore
+        - riskLevel
+        - scoreBreakdown
+        - ledger
+        - warnings
+      properties:
+        partId:
+          type: string
+        warehouseId:
+          type: string
+        horizonDate:
+          type: string
+          format: date
+        currentAvailableQuantity:
+          type: number
+        projectedInboundQuantity:
+          type: number
+        projectedDemandQuantity:
+          type: number
+        projectedEndingQuantity:
+          type: number
+        safetyStockQuantity:
+          type: number
+        shortageQuantity:
+          type: number
+        safetyStockBreachDate:
+          type: string
+          format: date
+        stockoutDate:
+          type: string
+          format: date
+        daysUntilStockout:
+          type: integer
+        riskScore:
+          type: integer
+        riskLevel:
+          type: string
+        scoreBreakdown:
+          type: object
+        ledger:
+          type: array
+          items:
+            type: object
+        warnings:
+          type: array
+          items:
+            type: string
