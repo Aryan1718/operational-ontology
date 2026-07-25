@@ -1,42 +1,62 @@
+"use client";
+
 import type { ReactNode } from "react";
-import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { WorkspaceHeader } from "@/components/layout/workspace-header";
+import { WorkspaceSidebar } from "@/components/layout/workspace-sidebar";
 
-const navigation = [
-  { href: "/", label: "Command Center" },
-  { href: "/ontology", label: "Ontology Studio" },
-  { href: "/explorer", label: "Object Explorer" },
-  { href: "/risk-events", label: "Risk Events" },
-  { href: "/mitigation-plans", label: "Mitigation Plans" },
-  { href: "/action-executions", label: "Action Executions" },
-  { href: "/audit", label: "Audit Log" },
-  { href: "/assistant", label: "AI Assistant" },
-];
+type AppShellProps = {
+  children: ReactNode;
+};
 
-export function AppShell({ children }: { children: ReactNode }) {
+const SECTION_TITLES: Record<string, string> = {
+  "/": "Overview",
+  "/ontology": "Ontology",
+  "/objects": "Objects",
+  "/risk-events": "Risk Desk",
+  "/mitigation-plans": "Mitigation Queue",
+  "/action-executions": "Executions",
+  "/audit": "Audit Trail",
+};
+
+function getSectionTitle(pathname: string) {
+  const match = Object.entries(SECTION_TITLES).find(
+    ([route]) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+
+  return match?.[1] ?? "Workspace";
+}
+
+function getBreadcrumbs(pathname: string) {
+  if (pathname === "/") {
+    return ["Workspace", "Overview"];
+  }
+
+  const segments = pathname.split("/").filter(Boolean);
+
+  return [
+    "Workspace",
+    ...segments.map((segment) => segment.replace(/-/g, " ")),
+  ];
+}
+
+export function AppShell({ children }: AppShellProps) {
+  const pathname = usePathname();
+  const sectionTitle = getSectionTitle(pathname);
+  const breadcrumbs = getBreadcrumbs(pathname);
+
   return (
-    <div className="min-h-screen bg-canvas text-ink">
-      <div className="mx-auto grid min-h-screen max-w-7xl gap-6 px-4 py-4 lg:grid-cols-[280px_1fr] lg:px-6">
-        <aside className="rounded-[2rem] border border-border bg-white/90 p-5 shadow-sm">
-          <div className="mb-6">
-            <p className="font-display text-2xl">Ontology Platform</p>
-            <p className="text-sm text-stone-600">
-              Navigation placeholders for the planned operational surfaces.
-            </p>
-          </div>
-          <nav className="grid gap-2">
-            {navigation.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="rounded-2xl px-4 py-3 text-sm font-semibold transition hover:bg-accent hover:text-white"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </aside>
-        <div className="rounded-[2rem] border border-border bg-white/70 p-4 shadow-sm md:p-8">
-          {children}
+    <div className="min-h-screen bg-[var(--workspace-background)] text-[var(--workspace-ink)]">
+      <div className="grid min-h-screen lg:grid-cols-[auto_1fr]">
+        <WorkspaceSidebar />
+        <div className="min-w-0">
+          <WorkspaceHeader
+            breadcrumbs={breadcrumbs}
+            sectionTitle={sectionTitle}
+          />
+          <main className="min-w-0 px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
+            {children}
+          </main>
         </div>
       </div>
     </div>

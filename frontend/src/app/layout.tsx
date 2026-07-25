@@ -3,8 +3,9 @@ import { QueryProvider } from "@/lib/query/provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ontology Platform Skeleton",
-  description: "Frontend skeleton for the ontology-inspired platform.",
+  title: "Ontology Manager",
+  description:
+    "Operational workspace for inspecting ontology structure and governed execution context.",
 };
 
 export default function RootLayout({

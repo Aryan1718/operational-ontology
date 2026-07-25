@@ -6,15 +6,60 @@
 
 :root {
   color-scheme: light;
+  --workspace-background: #f3efe6;
+  --workspace-surface: #fbf8f2;
+  --workspace-surface-alt: #f0e8dd;
+  --workspace-ink: #201c17;
+  --workspace-muted: #655c52;
+  --workspace-line: #cdc2b3;
+  --workspace-accent: #a04f27;
+  --workspace-danger: #9d3a2e;
+  --workspace-warning: #b06c1b;
+  --workspace-success: #3f6a53;
+  --workspace-rail: #16171a;
+  --workspace-rail-ink: #ece7dc;
+  --workspace-rail-muted: #a8a194;
+  --workspace-rail-line: #34363a;
+  --workspace-rail-panel: #1d1f24;
+  --workspace-rail-hover: #20242a;
+  --workspace-rail-active: #2a211d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--workspace-background);
 }
 
 body {
-  @apply bg-canvas text-ink antialiased;
-  background-image:
-    radial-gradient(circle at top left, rgba(164, 76, 36, 0.18), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(244, 239, 229, 0.95));
+  @apply font-sans antialiased;
+  min-height: 100vh;
+  color: var(--workspace-ink);
+  background:
+    linear-gradient(180deg, rgba(255, 251, 245, 0.7), rgba(243, 239, 230, 0.96)),
+    linear-gradient(90deg, rgba(205, 194, 179, 0.2) 1px, transparent 1px),
+    linear-gradient(rgba(205, 194, 179, 0.2) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
 }
 
 a {
   @apply text-inherit no-underline;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--workspace-accent);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--workspace-accent) 22%, white);
 }

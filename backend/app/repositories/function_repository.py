@@ -3,15 +3,37 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
-from app.models.supply_chain import Inventory, Part, Warehouse
+from app.models.risk import RiskEvent
+from app.models.supply_chain import (
+    CustomerOrder,
+    CustomerOrderItem,
+    Inventory,
+    Part,
+    Product,
+    ProductBomItem,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    Shipment,
+    Supplier,
+    SupplierPart,
+    Warehouse,
+)
 
 ZERO = Decimal("0.00")
 ACTIVE_WAREHOUSE_STATUS = "active"
+ACTIVE_PART_STATUS = "active"
+ACTIVE_PRODUCT_STATUS = "active"
+ACTIVE_SUPPLIER_PART_STATUS = "active"
+OPEN_CUSTOMER_ORDER_STATUSES = ("open", "allocated", "partially_allocated", "delayed")
+OPEN_PURCHASE_ORDER_STATUSES = ("confirmed", "partially_received", "delayed")
+OPEN_SHIPMENT_STATUSES = ("planned", "allocated", "in_transit", "delayed")
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +45,86 @@ class InventoryAvailabilityRow:
     reserved_quantity: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class SupplierPartRow:
+    """Supplier-part relation resolved to public identifiers."""
+
+    supplier_part_id: str
+    part_id: UUID
+    part_code: str
+    part_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class PurchaseOrderSupplyRow:
+    """Open purchase-order supply for one supplier part."""
+
+    purchase_order_id: str
+    supplier_id: UUID
+    part_id: UUID
+    expected_delivery_date: date | None
+    open_quantity: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class DemandProjectionRow:
+    """Projected part demand derived from open customer orders and BOM rows."""
+
+    part_id: UUID
+    warehouse_code: str
+    required_date: date
+    demand_quantity: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class WarehouseInventoryRow:
+    """Available inventory for one part at one demand-serving warehouse."""
+
+    part_id: UUID
+    warehouse_code: str
+    available_quantity: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ProductBomRequirementRow:
+    """One active BOM requirement for an active product."""
+
+    product_id: UUID
+    product_code: str
+    product_name: str
+    part_id: UUID
+    part_code: str
+    part_name: str
+    part_criticality: str
+    quantity_required: Decimal
+    is_critical: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ProductDemandRow:
+    """Open demand aggregated at the product level."""
+
+    product_id: UUID
+    open_order_quantity: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class OpenOrderLineRow:
+    """Open order-line demand for impacted-product allocation."""
+
+    order_id: UUID
+    order_code: str
+    priority: str
+    required_delivery_date: date
+    order_date: date
+    destination_warehouse_id: str | None
+    order_line_id: UUID
+    product_id: UUID
+    product_code: str
+    remaining_quantity: Decimal
+    estimated_line_value: Decimal
+
+
 class FunctionRepository:
     """Read-only repository for ontology function execution."""
 
@@ -32,6 +134,372 @@ class FunctionRepository:
     def part_exists(self, part_id: str) -> bool:
         statement = select(Part.id).where(Part.part_code == part_id)
         return self._session.execute(statement).scalar_one_or_none() is not None
+
+    def get_risk_event_by_code(self, risk_event_id: str) -> RiskEvent | None:
+        statement = select(RiskEvent).where(RiskEvent.risk_code == risk_event_id)
+        return self._session.execute(statement).scalar_one_or_none()
+
+    def supplier_exists(self, supplier_id: UUID) -> bool:
+        statement = select(Supplier.id).where(Supplier.id == supplier_id)
+        return self._session.execute(statement).scalar_one_or_none() is not None
+
+    def get_active_supplier_parts(self, supplier_id: UUID) -> list[SupplierPartRow]:
+        statement: Select[tuple[SupplierPart, Part]] = (
+            select(SupplierPart, Part)
+            .join(Part, Part.id == SupplierPart.part_id)
+            .where(
+                SupplierPart.supplier_id == supplier_id,
+                SupplierPart.status == ACTIVE_SUPPLIER_PART_STATUS,
+                Part.status == ACTIVE_PART_STATUS,
+            )
+            .order_by(Part.part_code.asc(), SupplierPart.supplier_part_code.asc(), SupplierPart.id.asc())
+        )
+        return [
+            SupplierPartRow(
+                supplier_part_id=supplier_part.supplier_part_code or str(supplier_part.id),
+                part_id=part.id,
+                part_code=part.part_code,
+                part_name=part.name,
+            )
+            for supplier_part, part in self._session.execute(statement).all()
+        ]
+
+    def get_open_purchase_orders_for_parts(
+        self,
+        part_ids: set[UUID],
+    ) -> list[PurchaseOrderSupplyRow]:
+        if not part_ids:
+            return []
+
+        statement: Select[tuple[PurchaseOrder, PurchaseOrderItem]] = (
+            select(PurchaseOrder, PurchaseOrderItem)
+            .join(PurchaseOrderItem, PurchaseOrderItem.purchase_order_id == PurchaseOrder.id)
+            .where(
+                PurchaseOrder.status.in_(OPEN_PURCHASE_ORDER_STATUSES),
+                PurchaseOrderItem.part_id.in_(part_ids),
+            )
+            .order_by(
+                PurchaseOrder.expected_delivery_date.asc(),
+                PurchaseOrder.purchase_order_code.asc(),
+            )
+        )
+
+        rows: list[PurchaseOrderSupplyRow] = []
+        for purchase_order, item in self._session.execute(statement).all():
+            open_quantity = max(ZERO, item.quantity_ordered - item.quantity_received)
+            if open_quantity <= ZERO:
+                continue
+            rows.append(
+                PurchaseOrderSupplyRow(
+                    purchase_order_id=purchase_order.purchase_order_code,
+                    supplier_id=purchase_order.supplier_id,
+                    part_id=item.part_id,
+                    expected_delivery_date=purchase_order.expected_delivery_date,
+                    open_quantity=open_quantity,
+                )
+            )
+        return rows
+
+    def get_open_part_demands(self, part_ids: set[UUID]) -> list[DemandProjectionRow]:
+        if not part_ids:
+            return []
+
+        statement = (
+            select(
+                ProductBomItem.part_id,
+                Warehouse.warehouse_code,
+                CustomerOrder.requested_delivery_date,
+                CustomerOrderItem.quantity_ordered,
+                CustomerOrderItem.quantity_allocated,
+                ProductBomItem.quantity_required,
+            )
+            .join(Product, Product.id == ProductBomItem.product_id)
+            .join(CustomerOrderItem, CustomerOrderItem.product_id == Product.id)
+            .join(CustomerOrder, CustomerOrder.id == CustomerOrderItem.order_id)
+            .join(Shipment, Shipment.order_id == CustomerOrder.id)
+            .join(Warehouse, Warehouse.id == Shipment.warehouse_id)
+            .where(
+                ProductBomItem.part_id.in_(part_ids),
+                Product.status == ACTIVE_PRODUCT_STATUS,
+                CustomerOrder.status.in_(OPEN_CUSTOMER_ORDER_STATUSES),
+                Shipment.status.in_(OPEN_SHIPMENT_STATUSES),
+                Warehouse.status == ACTIVE_WAREHOUSE_STATUS,
+            )
+            .order_by(
+                CustomerOrder.requested_delivery_date.asc(),
+                Warehouse.warehouse_code.asc(),
+            )
+        )
+
+        rows: list[DemandProjectionRow] = []
+        for part_id, warehouse_code, required_date, quantity_ordered, quantity_allocated, quantity_required in self._session.execute(statement).all():
+            unfulfilled_quantity = max(ZERO, quantity_ordered - quantity_allocated)
+            if unfulfilled_quantity <= ZERO:
+                continue
+            rows.append(
+                DemandProjectionRow(
+                    part_id=part_id,
+                    warehouse_code=warehouse_code,
+                    required_date=required_date,
+                    demand_quantity=unfulfilled_quantity * quantity_required,
+                )
+            )
+        return rows
+
+    def get_inventory_for_part_warehouses(
+        self,
+        part_ids: set[UUID],
+        warehouse_codes: set[str],
+    ) -> list[WarehouseInventoryRow]:
+        if not part_ids or not warehouse_codes:
+            return []
+
+        statement: Select[tuple[Inventory, Warehouse]] = (
+            select(Inventory, Warehouse)
+            .join(Warehouse, Warehouse.id == Inventory.warehouse_id)
+            .where(
+                Inventory.item_type == "part",
+                Inventory.part_id.in_(part_ids),
+                Warehouse.warehouse_code.in_(warehouse_codes),
+                Warehouse.status == ACTIVE_WAREHOUSE_STATUS,
+            )
+            .order_by(Warehouse.warehouse_code.asc())
+        )
+
+        rows: list[WarehouseInventoryRow] = []
+        for inventory, warehouse in self._session.execute(statement).all():
+            rows.append(
+                WarehouseInventoryRow(
+                    part_id=inventory.part_id,
+                    warehouse_code=warehouse.warehouse_code,
+                    available_quantity=max(
+                        ZERO,
+                        inventory.on_hand_quantity - inventory.reserved_quantity,
+                    ),
+                )
+            )
+        return rows
+
+    def get_candidate_products_for_parts(
+        self,
+        part_ids: set[UUID],
+    ) -> list[ProductBomRequirementRow]:
+        if not part_ids:
+            return []
+
+        statement = (
+            select(
+                Product.id,
+                Product.product_code,
+                Product.name,
+                Part.id,
+                Part.part_code,
+                Part.name,
+                Part.criticality,
+                ProductBomItem.quantity_required,
+                ProductBomItem.is_critical,
+            )
+            .join(ProductBomItem, ProductBomItem.product_id == Product.id)
+            .join(Part, Part.id == ProductBomItem.part_id)
+            .where(
+                ProductBomItem.part_id.in_(part_ids),
+                Product.status == ACTIVE_PRODUCT_STATUS,
+                Part.status == ACTIVE_PART_STATUS,
+            )
+            .order_by(Product.product_code.asc(), Part.part_code.asc())
+        )
+
+        return [
+            ProductBomRequirementRow(
+                product_id=product_id,
+                product_code=product_code,
+                product_name=product_name,
+                part_id=part_id,
+                part_code=part_code,
+                part_name=part_name,
+                part_criticality=part_criticality,
+                quantity_required=quantity_required,
+                is_critical=is_critical,
+            )
+            for (
+                product_id,
+                product_code,
+                product_name,
+                part_id,
+                part_code,
+                part_name,
+                part_criticality,
+                quantity_required,
+                is_critical,
+            ) in self._session.execute(statement).all()
+        ]
+
+    def get_active_product_bom_requirements(
+        self,
+        product_ids: set[UUID],
+    ) -> list[ProductBomRequirementRow]:
+        if not product_ids:
+            return []
+
+        statement = (
+            select(
+                Product.id,
+                Product.product_code,
+                Product.name,
+                Part.id,
+                Part.part_code,
+                Part.name,
+                Part.criticality,
+                ProductBomItem.quantity_required,
+                ProductBomItem.is_critical,
+            )
+            .join(ProductBomItem, ProductBomItem.product_id == Product.id)
+            .join(Part, Part.id == ProductBomItem.part_id)
+            .where(
+                Product.id.in_(product_ids),
+                Product.status == ACTIVE_PRODUCT_STATUS,
+                Part.status == ACTIVE_PART_STATUS,
+            )
+            .order_by(Product.product_code.asc(), Part.part_code.asc())
+        )
+
+        return [
+            ProductBomRequirementRow(
+                product_id=product_id,
+                product_code=product_code,
+                product_name=product_name,
+                part_id=part_id,
+                part_code=part_code,
+                part_name=part_name,
+                part_criticality=part_criticality,
+                quantity_required=quantity_required,
+                is_critical=is_critical,
+            )
+            for (
+                product_id,
+                product_code,
+                product_name,
+                part_id,
+                part_code,
+                part_name,
+                part_criticality,
+                quantity_required,
+                is_critical,
+            ) in self._session.execute(statement).all()
+        ]
+
+    def get_open_product_demands(self, product_ids: set[UUID]) -> list[ProductDemandRow]:
+        if not product_ids:
+            return []
+
+        statement = (
+            select(
+                Product.id,
+                CustomerOrderItem.quantity_ordered,
+                CustomerOrderItem.quantity_allocated,
+            )
+            .join(CustomerOrderItem, CustomerOrderItem.product_id == Product.id)
+            .join(CustomerOrder, CustomerOrder.id == CustomerOrderItem.order_id)
+            .join(Shipment, Shipment.order_id == CustomerOrder.id)
+            .where(
+                Product.id.in_(product_ids),
+                Product.status == ACTIVE_PRODUCT_STATUS,
+                CustomerOrder.status.in_(OPEN_CUSTOMER_ORDER_STATUSES),
+                Shipment.status.in_(OPEN_SHIPMENT_STATUSES),
+            )
+            .order_by(Product.product_code.asc())
+        )
+
+        demand_by_product: dict[UUID, Decimal] = {}
+        for product_id, quantity_ordered, quantity_allocated in self._session.execute(statement).all():
+            unfulfilled_quantity = max(ZERO, quantity_ordered - quantity_allocated)
+            if unfulfilled_quantity <= ZERO:
+                continue
+            demand_by_product[product_id] = demand_by_product.get(product_id, ZERO) + unfulfilled_quantity
+
+        return [
+            ProductDemandRow(
+                product_id=product_id,
+                open_order_quantity=open_order_quantity,
+            )
+            for product_id, open_order_quantity in demand_by_product.items()
+        ]
+
+    def get_open_order_lines_for_products(self, product_codes: set[str]) -> list[OpenOrderLineRow]:
+        if not product_codes:
+            return []
+
+        statement = (
+            select(
+                CustomerOrder,
+                CustomerOrderItem,
+                Product,
+                Shipment,
+                Warehouse,
+            )
+            .join(CustomerOrderItem, CustomerOrderItem.order_id == CustomerOrder.id)
+            .join(Product, Product.id == CustomerOrderItem.product_id)
+            .outerjoin(Shipment, Shipment.order_id == CustomerOrder.id)
+            .outerjoin(Warehouse, Warehouse.id == Shipment.warehouse_id)
+            .where(
+                CustomerOrder.status.in_(OPEN_CUSTOMER_ORDER_STATUSES),
+                Product.status == ACTIVE_PRODUCT_STATUS,
+                Product.product_code.in_(product_codes),
+            )
+            .order_by(
+                CustomerOrder.priority.asc(),
+                CustomerOrder.requested_delivery_date.asc(),
+                CustomerOrder.created_at.asc(),
+                CustomerOrder.order_code.asc(),
+                CustomerOrderItem.id.asc(),
+            )
+        )
+
+        rows_by_line_id: dict[UUID, OpenOrderLineRow] = {}
+        for order, order_item, product, shipment, warehouse in self._session.execute(statement).all():
+            remaining_quantity = max(ZERO, order_item.quantity_ordered - order_item.quantity_allocated)
+            if remaining_quantity <= ZERO:
+                continue
+
+            destination_warehouse_id = warehouse.warehouse_code if warehouse is not None else None
+            existing = rows_by_line_id.get(order_item.id)
+            if existing is None:
+                rows_by_line_id[order_item.id] = OpenOrderLineRow(
+                    order_id=order.id,
+                    order_code=order.order_code,
+                    priority=order.priority,
+                    required_delivery_date=order.requested_delivery_date,
+                    order_date=order.created_at.date(),
+                    destination_warehouse_id=destination_warehouse_id,
+                    order_line_id=order_item.id,
+                    product_id=product.id,
+                    product_code=product.product_code,
+                    remaining_quantity=remaining_quantity,
+                    estimated_line_value=ZERO,
+                )
+                continue
+
+            resolved_destination = existing.destination_warehouse_id
+            if resolved_destination is None and destination_warehouse_id is not None:
+                resolved_destination = destination_warehouse_id
+            elif resolved_destination is not None and destination_warehouse_id is not None:
+                resolved_destination = min(resolved_destination, destination_warehouse_id)
+
+            rows_by_line_id[order_item.id] = OpenOrderLineRow(
+                order_id=existing.order_id,
+                order_code=existing.order_code,
+                priority=existing.priority,
+                required_delivery_date=existing.required_delivery_date,
+                order_date=existing.order_date,
+                destination_warehouse_id=resolved_destination,
+                order_line_id=existing.order_line_id,
+                product_id=existing.product_id,
+                product_code=existing.product_code,
+                remaining_quantity=existing.remaining_quantity,
+                estimated_line_value=existing.estimated_line_value,
+            )
+
+        return list(rows_by_line_id.values())
 
     def get_inventory_availability(self, part_id: str) -> list[InventoryAvailabilityRow]:
         statement: Select[tuple[Warehouse, Inventory]] = (

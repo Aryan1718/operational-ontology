@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -24,6 +25,140 @@ class FunctionExecutionResponse(ApiBaseModel):
     function_name: str = Field(alias="functionName")
     result: Any
     warnings: list[str] = Field(default_factory=list)
+
+
+class FindImpactedPartsParameters(ApiBaseModel):
+    """Stable public input for findImpactedParts."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    risk_event_id: str = Field(alias="riskEventId", strict=True, min_length=1)
+
+
+class ImpactedPartEntry(ApiBaseModel):
+    """One impacted part returned from the supplier-delay projection."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    part_id: str = Field(alias="partId", min_length=1)
+    part_name: str = Field(alias="partName", min_length=1)
+    supplier_part_id: str = Field(alias="supplierPartId", min_length=1)
+    delay_days: int = Field(alias="delayDays", ge=0)
+    open_purchase_order_quantity: Decimal = Field(alias="openPurchaseOrderQuantity")
+    baseline_shortage_quantity: Decimal = Field(alias="baselineShortageQuantity")
+    delayed_shortage_quantity: Decimal = Field(alias="delayedShortageQuantity")
+    shortage_increase_quantity: Decimal = Field(alias="shortageIncreaseQuantity")
+    first_baseline_shortage_date: date | None = Field(
+        alias="firstBaselineShortageDate",
+        default=None,
+    )
+    first_delayed_shortage_date: date | None = Field(
+        alias="firstDelayedShortageDate",
+        default=None,
+    )
+    delayed_purchase_order_ids: list[str] = Field(
+        alias="delayedPurchaseOrderIds",
+        default_factory=list,
+    )
+    impact_reason: str = Field(alias="impactReason", min_length=1)
+
+
+class FindImpactedPartsResult(ApiBaseModel):
+    """Read-only impacted-parts result set."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    items: list[ImpactedPartEntry] = Field(default_factory=list)
+
+
+class FindImpactedProductsParameters(ApiBaseModel):
+    """Stable public input for findImpactedProducts."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    risk_event_id: str = Field(alias="riskEventId", strict=True, min_length=1)
+
+
+class ImpactedProductEntry(ApiBaseModel):
+    """One impacted product derived from part-level projections."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    product_id: str = Field(alias="productId", min_length=1)
+    product_name: str = Field(alias="productName", min_length=1)
+    impacted_part_ids: list[str] = Field(alias="impactedPartIds", default_factory=list)
+    required_quantities: dict[str, Decimal] = Field(alias="requiredQuantities", default_factory=dict)
+    limiting_part_id: str = Field(alias="limitingPartId", min_length=1)
+    baseline_maximum_buildable_quantity: Decimal = Field(alias="baselineMaximumBuildableQuantity")
+    delayed_maximum_buildable_quantity: Decimal = Field(alias="delayedMaximumBuildableQuantity")
+    open_order_quantity: Decimal = Field(alias="openOrderQuantity")
+    baseline_production_shortfall_quantity: Decimal = Field(alias="baselineProductionShortfallQuantity")
+    delayed_production_shortfall_quantity: Decimal = Field(alias="delayedProductionShortfallQuantity")
+    shortfall_increase_quantity: Decimal = Field(alias="shortfallIncreaseQuantity")
+    highest_part_criticality: str = Field(alias="highestPartCriticality", min_length=1)
+    product_risk_level: str = Field(alias="productRiskLevel", min_length=1)
+    impact_reason: str = Field(alias="impactReason", min_length=1)
+
+
+class FindImpactedProductsResult(ApiBaseModel):
+    """Read-only impacted-products result set."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    items: list[ImpactedProductEntry] = Field(default_factory=list)
+
+
+class FindImpactedOrdersParameters(ApiBaseModel):
+    """Stable public input for findImpactedOrders."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    risk_event_id: str = Field(alias="riskEventId", strict=True, min_length=1)
+
+
+class ImpactedOrderProductEntry(ApiBaseModel):
+    """One impacted product allocation within an impacted order."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    product_id: str = Field(alias="productId", min_length=1)
+    required_quantity: Decimal = Field(alias="requiredQuantity")
+    baseline_fulfillable_quantity: Decimal = Field(alias="baselineFulfillableQuantity")
+    delayed_fulfillable_quantity: Decimal = Field(alias="delayedFulfillableQuantity")
+    shortage_quantity: Decimal = Field(alias="shortageQuantity")
+
+
+class ImpactedOrderEntry(ApiBaseModel):
+    """One customer order whose impacted-product fulfillment worsens."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    order_id: str = Field(alias="orderId", min_length=1)
+    order_number: str = Field(alias="orderNumber", min_length=1)
+    priority: str = Field(min_length=1)
+    required_delivery_date: date = Field(alias="requiredDeliveryDate")
+    destination_warehouse_id: str | None = Field(alias="destinationWarehouseId", default=None)
+    impacted_products: list[ImpactedOrderProductEntry] = Field(alias="impactedProducts", default_factory=list)
+    impacted_part_ids: list[str] = Field(alias="impactedPartIds", default_factory=list)
+    required_quantity: Decimal = Field(alias="requiredQuantity")
+    baseline_fulfillable_quantity: Decimal = Field(alias="baselineFulfillableQuantity")
+    delayed_fulfillable_quantity: Decimal = Field(alias="delayedFulfillableQuantity")
+    shortage_quantity: Decimal = Field(alias="shortageQuantity")
+    shortage_ratio: Decimal = Field(alias="shortageRatio")
+    baseline_projected_delay_days: int = Field(alias="baselineProjectedDelayDays", ge=0)
+    projected_delay_days: int = Field(alias="projectedDelayDays", ge=0)
+    estimated_order_value: Decimal = Field(alias="estimatedOrderValue")
+    risk_score: int = Field(alias="riskScore", ge=0, le=100)
+    impact_reason: str = Field(alias="impactReason", min_length=1)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class FindImpactedOrdersResult(ApiBaseModel):
+    """Read-only impacted-orders result set."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    items: list[ImpactedOrderEntry] = Field(default_factory=list)
 
 
 class GetInventoryAvailabilityParameters(ApiBaseModel):
