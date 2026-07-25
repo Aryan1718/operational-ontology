@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -11,7 +10,7 @@ from pydantic import ConfigDict, Field
 from app.schemas.common import ApiBaseModel
 
 
-class FunctionRequest(ApiBaseModel):
+class FunctionExecutionRequest(ApiBaseModel):
     """Strict generic request body for public ontology function execution."""
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
@@ -20,7 +19,7 @@ class FunctionRequest(ApiBaseModel):
 
 
 class FunctionExecutionResponse(ApiBaseModel):
-    """Shared successful payload returned from the Function Engine."""
+    """Shared successful payload returned from the function runtime."""
 
     function_name: str = Field(alias="functionName")
     result: Any
@@ -32,50 +31,24 @@ class GetInventoryAvailabilityParameters(ApiBaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    part_id: str = Field(alias="partId", min_length=1)
-    warehouse_id: str | None = Field(default=None, alias="warehouseId")
-    required_by_date: date | None = Field(default=None, alias="requiredByDate")
+    part_id: str = Field(alias="partId", strict=True, min_length=1)
 
 
-class InventoryAvailabilityItem(ApiBaseModel):
-    """Validated public inventory availability row."""
+class WarehouseAvailabilityEntry(ApiBaseModel):
+    """Warehouse-level availability for one part."""
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    warehouse_id: str = Field(alias="warehouseId")
-    warehouse_name: str | None = Field(default=None, alias="warehouseName")
-    part_id: str = Field(alias="partId")
-    on_hand_quantity: Decimal = Field(alias="onHandQuantity")
-    reserved_quantity: Decimal = Field(alias="reservedQuantity")
+    warehouse_id: str = Field(alias="warehouseId", min_length=1)
     available_quantity: Decimal = Field(alias="availableQuantity")
-    in_transit_quantity: Decimal = Field(alias="inTransitQuantity")
-    eligible_inbound_quantity: Decimal | None = Field(
-        default=None,
-        alias="eligibleInboundQuantity",
-    )
-    eligible_incoming_transfer_quantity: Decimal | None = Field(
-        default=None,
-        alias="eligibleIncomingTransferQuantity",
-    )
-    committed_outgoing_transfer_quantity: Decimal | None = Field(
-        default=None,
-        alias="committedOutgoingTransferQuantity",
-    )
-    projected_available_by_required_date: Decimal | None = Field(
-        default=None,
-        alias="projectedAvailableByRequiredDate",
-    )
-    safety_stock_quantity: Decimal | None = Field(
-        default=None,
-        alias="safetyStockQuantity",
-    )
-    surplus_above_safety_stock: Decimal | None = Field(
-        default=None,
-        alias="surplusAboveSafetyStock",
-    )
-    inventory_updated_at: datetime | None = Field(
-        default=None,
-        alias="inventoryUpdatedAt",
-    )
-    required_by_date: date | None = Field(default=None, alias="requiredByDate")
-    warnings: list[str] = Field(default_factory=list)
+    reserved_quantity: Decimal = Field(alias="reservedQuantity")
+
+
+class InventoryAvailabilityResult(ApiBaseModel):
+    """Aggregated inventory availability for one part across warehouses."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    part_id: str = Field(alias="partId", min_length=1)
+    total_available_quantity: Decimal = Field(alias="totalAvailableQuantity")
+    warehouses: list[WarehouseAvailabilityEntry] = Field(default_factory=list)

@@ -24,7 +24,7 @@ from app.runtime.function_engine import (
 )
 from app.schemas.functions import (
     GetInventoryAvailabilityParameters,
-    InventoryAvailabilityItem,
+    InventoryAvailabilityResult,
 )
 
 
@@ -51,8 +51,12 @@ def _engine(
                 "getInventoryAvailability": RegisteredFunctionHandler(
                     handler_name="getInventoryAvailability",
                     input_model=GetInventoryAvailabilityParameters,
-                    output_model=list[InventoryAvailabilityItem],
-                    execute=lambda _context, _parameters: [],
+                    output_model=InventoryAvailabilityResult,
+                    execute=lambda _context, _parameters: {
+                        "partId": "PART-B",
+                        "totalAvailableQuantity": "0.00",
+                        "warehouses": [],
+                    },
                 )
             }
         ),
@@ -71,7 +75,7 @@ def test_function_engine_resolves_public_function_from_ontology_metadata() -> No
     )
 
     assert executed.payload.function_name == "getInventoryAvailability"
-    assert executed.payload.result == []
+    assert executed.payload.result.part_id == "PART-B"
     assert executed.payload.warnings == []
 
 
@@ -81,14 +85,18 @@ def test_function_engine_dispatches_registered_handler_by_stable_name() -> None:
     def _handler(
         context: Any,
         parameters: GetInventoryAvailabilityParameters,
-    ) -> list[Any]:
+    ) -> dict[str, Any]:
         calls.append(
             {
                 "requestId": context.request_id,
                 "partId": parameters.part_id,
             }
         )
-        return []
+        return {
+            "partId": parameters.part_id,
+            "totalAvailableQuantity": "10.00",
+            "warehouses": [],
+        }
 
     engine = _engine(
         handler_registry=FunctionHandlerRegistry(
@@ -96,7 +104,7 @@ def test_function_engine_dispatches_registered_handler_by_stable_name() -> None:
                 "getInventoryAvailability": RegisteredFunctionHandler(
                     handler_name="getInventoryAvailability",
                     input_model=GetInventoryAvailabilityParameters,
-                    output_model=list[InventoryAvailabilityItem],
+                    output_model=InventoryAvailabilityResult,
                     execute=_handler,
                 )
             }
@@ -135,7 +143,7 @@ def test_function_engine_rejects_invalid_parameters() -> None:
         engine.execute(
             actor=_actor(),
             function_name="getInventoryAvailability",
-            raw_parameters={"warehouseId": "WH-A"},
+            raw_parameters={"partId": 123},
             request_id="req-invalid-input",
         )
 
@@ -166,8 +174,8 @@ def test_function_engine_validates_handler_output() -> None:
                 "getInventoryAvailability": RegisteredFunctionHandler(
                     handler_name="getInventoryAvailability",
                     input_model=GetInventoryAvailabilityParameters,
-                    output_model=list[InventoryAvailabilityItem],
-                    execute=lambda _context, _parameters: [{"warehouseId": "WH-A"}],
+                    output_model=InventoryAvailabilityResult,
+                    execute=lambda _context, _parameters: {"partId": "PART-B"},
                 )
             }
         ),
@@ -186,7 +194,7 @@ def test_function_engine_validates_handler_output() -> None:
 
 
 def test_function_engine_maps_unexpected_handler_errors_safely() -> None:
-    def _crash(_context: Any, _parameters: Any) -> list[Any]:
+    def _crash(_context: Any, _parameters: Any) -> dict[str, Any]:
         raise RuntimeError("sensitive stack detail")
 
     engine = _engine(
@@ -195,7 +203,7 @@ def test_function_engine_maps_unexpected_handler_errors_safely() -> None:
                 "getInventoryAvailability": RegisteredFunctionHandler(
                     handler_name="getInventoryAvailability",
                     input_model=GetInventoryAvailabilityParameters,
-                    output_model=list[InventoryAvailabilityItem],
+                    output_model=InventoryAvailabilityResult,
                     execute=_crash,
                 )
             }
@@ -214,4 +222,3 @@ def test_function_engine_maps_unexpected_handler_errors_safely() -> None:
     assert exc_info.value.message == (
         "Function 'getInventoryAvailability' failed during execution."
     )
-

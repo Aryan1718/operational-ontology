@@ -2163,12 +2163,45 @@ functions:
   getInventoryAvailability:
     key: getInventoryAvailability
     displayName: Get Inventory Availability
-    description: Return current inventory availability for the requested business context.
+    description: Return current inventory availability for the requested part across warehouses.
     handler: getInventoryAvailability
     readOnly: true
     inputModel: GetInventoryAvailabilityParameters
-    outputModel: InventoryAvailabilityItemList
-  findAlternativeWarehouses:
+    outputModel: InventoryAvailabilityResult
+    parameters:
+      type: object
+      required:
+        - partId
+      properties:
+        partId:
+          type: string
+          minLength: 1
+    returns:
+      type: object
+      required:
+        - partId
+        - totalAvailableQuantity
+        - warehouses
+      properties:
+        partId:
+          type: string
+        totalAvailableQuantity:
+          type: number
+        warehouses:
+          type: array
+          items:
+            type: object
+            required:
+              - warehouseId
+              - availableQuantity
+              - reservedQuantity
+            properties:
+              warehouseId:
+                type: string
+              availableQuantity:
+                type: number
+              reservedQuantity:
+                type: number  findAlternativeWarehouses:
     key: findAlternativeWarehouses
     displayName: Find Alternative Warehouses
     description: Find warehouses that can safely mitigate an inventory shortage.
@@ -2826,3 +2859,5 @@ permissions:
         - internal
       obligations:
         auditView: full
+
+

@@ -9,7 +9,7 @@ from app.api.response_contract import build_success_response, get_request_id
 from app.ontology.actor_context import ActorContext
 from app.runtime.function_engine import FunctionEngine
 from app.schemas.common import ApiErrorResponse, SuccessResponse
-from app.schemas.functions import FunctionExecutionResponse, FunctionRequest
+from app.schemas.functions import FunctionExecutionRequest, FunctionExecutionResponse
 
 router = APIRouter()
 
@@ -18,7 +18,7 @@ ActorContextDependency = Annotated[ActorContext, Depends(get_request_actor_conte
 
 
 @router.post(
-    '/{function_name}',
+    '/{function_name}/execute',
     response_model=SuccessResponse[FunctionExecutionResponse],
     responses={
         404: {'model': ApiErrorResponse},
@@ -29,7 +29,7 @@ ActorContextDependency = Annotated[ActorContext, Depends(get_request_actor_conte
 def execute_function(
     request: Request,
     function_name: str,
-    function_request: FunctionRequest,
+    function_request: FunctionExecutionRequest,
     actor: ActorContextDependency,
     engine: FunctionEngineDependency,
 ) -> SuccessResponse[FunctionExecutionResponse]:

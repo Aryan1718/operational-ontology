@@ -6,7 +6,7 @@ from app.functions.inventory import get_inventory_availability
 from app.functions.registry import FunctionHandlerRegistry, RegisteredFunctionHandler
 from app.schemas.functions import (
     GetInventoryAvailabilityParameters,
-    InventoryAvailabilityItem,
+    InventoryAvailabilityResult,
 )
 
 
@@ -17,7 +17,7 @@ def build_function_handler_registry() -> FunctionHandlerRegistry:
             "getInventoryAvailability": RegisteredFunctionHandler(
                 handler_name="getInventoryAvailability",
                 input_model=GetInventoryAvailabilityParameters,
-                output_model=list[InventoryAvailabilityItem],
+                output_model=InventoryAvailabilityResult,
                 execute=get_inventory_availability,
             )
         }
