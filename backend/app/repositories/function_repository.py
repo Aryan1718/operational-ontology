@@ -7,9 +7,10 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from app.models.mitigation import MitigationPlanStep
 from app.models.risk import RiskEvent
 from app.models.supply_chain import (
     CustomerOrder,
@@ -556,6 +557,26 @@ class StockoutDemandRow:
 
 
 
+@dataclass(frozen=True, slots=True)
+class AlternativeWarehouseInventoryRow:
+    """One active warehouse inventory position for a candidate source warehouse."""
+
+    warehouse_id: str
+    warehouse_name: str
+    region: str | None
+    country: str | None
+    available_quantity: Decimal
+    safety_stock_quantity: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class CommittedTransferQuantityRow:
+    """Committed outgoing transfer quantity for one source warehouse and part."""
+
+    warehouse_id: str
+    quantity: Decimal
+
+
 def _warehouse_exists(self: FunctionRepository, warehouse_id: str) -> bool:
     statement = select(Warehouse.id).where(Warehouse.warehouse_code == warehouse_id)
     return self._session.execute(statement).scalar_one_or_none() is not None
@@ -706,3 +727,74 @@ FunctionRepository.get_part_inventory_position = _get_part_inventory_position
 FunctionRepository.get_open_inbound_purchase_orders_for_part_warehouse = _get_open_inbound_purchase_orders_for_part_warehouse
 FunctionRepository.get_open_part_demands_for_warehouse = _get_open_part_demands_for_warehouse
 FunctionRepository.get_highest_bom_criticality_for_part = _get_highest_bom_criticality_for_part
+
+
+def _get_part_by_code(self: FunctionRepository, part_id: str) -> Part | None:
+    statement = select(Part).where(Part.part_code == part_id)
+    return self._session.execute(statement).scalar_one_or_none()
+
+
+def _get_warehouse_by_code(self: FunctionRepository, warehouse_id: str) -> Warehouse | None:
+    statement = select(Warehouse).where(Warehouse.warehouse_code == warehouse_id)
+    return self._session.execute(statement).scalar_one_or_none()
+
+
+def _get_source_inventory_positions_for_part(
+    self: FunctionRepository,
+    part_id: str,
+    excluded_warehouse_id: str,
+) -> list[AlternativeWarehouseInventoryRow]:
+    statement: Select[tuple[Warehouse, Inventory]] = (
+        select(Warehouse, Inventory)
+        .join(Inventory, Inventory.warehouse_id == Warehouse.id)
+        .join(Part, Part.id == Inventory.part_id)
+        .where(
+            Inventory.item_type == "part",
+            Part.part_code == part_id,
+            Warehouse.status == ACTIVE_WAREHOUSE_STATUS,
+            Warehouse.warehouse_code != excluded_warehouse_id,
+        )
+        .order_by(Warehouse.warehouse_code.asc())
+    )
+
+    rows: list[AlternativeWarehouseInventoryRow] = []
+    for warehouse, inventory in self._session.execute(statement).all():
+        rows.append(
+            AlternativeWarehouseInventoryRow(
+                warehouse_id=warehouse.warehouse_code,
+                warehouse_name=warehouse.name,
+                region=warehouse.region,
+                country=warehouse.country,
+                available_quantity=max(ZERO, inventory.on_hand_quantity - inventory.reserved_quantity),
+                safety_stock_quantity=inventory.safety_stock_quantity,
+            )
+        )
+    return rows
+
+
+def _get_committed_outgoing_transfer_quantities_for_part(
+    self: FunctionRepository,
+    part_id: str,
+) -> dict[str, Decimal]:
+    statement = (
+        select(
+            Warehouse.warehouse_code,
+            func.coalesce(func.sum(MitigationPlanStep.quantity), 0),
+        )
+        .join(Warehouse, Warehouse.id == MitigationPlanStep.source_warehouse_id)
+        .join(Part, Part.id == MitigationPlanStep.part_id)
+        .where(
+            MitigationPlanStep.action_type == "reallocate_inventory",
+            MitigationPlanStep.status.in_(("approved", "executing")),
+            Part.part_code == part_id,
+            Warehouse.status == ACTIVE_WAREHOUSE_STATUS,
+        )
+        .group_by(Warehouse.warehouse_code)
+    )
+    return {warehouse_id: quantity for warehouse_id, quantity in self._session.execute(statement).all()}
+
+
+FunctionRepository.get_part_by_code = _get_part_by_code
+FunctionRepository.get_warehouse_by_code = _get_warehouse_by_code
+FunctionRepository.get_source_inventory_positions_for_part = _get_source_inventory_positions_for_part
+FunctionRepository.get_committed_outgoing_transfer_quantities_for_part = _get_committed_outgoing_transfer_quantities_for_part

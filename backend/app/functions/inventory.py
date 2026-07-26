@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.core.exceptions import ApplicationError
 from app.repositories.function_repository import FunctionRepository
 from app.runtime.function_engine import FunctionExecutionContext
 from app.schemas.functions import (
+    AlternativeWarehouseEntry,
+    AlternativeWarehouseEstimator,
     CalculateStockoutRiskParameters,
     CalculateStockoutRiskResult,
+    FindAlternativeWarehousesParameters,
+    FindAlternativeWarehousesResult,
     GetInventoryAvailabilityParameters,
     InventoryAvailabilityResult,
     StockoutRiskLedgerEntry,
@@ -22,6 +26,15 @@ from app.schemas.functions import (
 
 ZERO = Decimal("0.00")
 ONE_HUNDRED = Decimal("100")
+MONEY_QUANTUM = Decimal("0.01")
+TRANSFER_ESTIMATOR_NAME = "region-country-transfer-estimator"
+TRANSFER_ESTIMATOR_ASSUMPTIONS = [
+    "Same-region transfers require 1 day",
+    "Same-country transfers require 2 days",
+    "Cross-country transfers require 5 days",
+]
+TRANSFER_BASE_COST = Decimal("50.00")
+TRANSFER_COST_PER_UNIT_PER_DAY = Decimal("0.10")
 WEIGHT_SHORTAGE_SEVERITY = Decimal("0.50")
 WEIGHT_STOCKOUT_URGENCY = Decimal("0.25")
 WEIGHT_SAFETY_STOCK_BREACH = Decimal("0.15")
@@ -248,6 +261,115 @@ def calculate_stockout_risk(
         warnings=[],
     )
 
+
+
+
+def find_alternative_warehouses(
+    context: FunctionExecutionContext,
+    parameters: FindAlternativeWarehousesParameters,
+) -> FindAlternativeWarehousesResult:
+    """Return feasible source warehouses that can transfer part inventory safely."""
+
+    repository = FunctionRepository(context.session)
+    part = repository.get_part_by_code(parameters.part_id)
+    if part is None:
+        raise PartNotFoundError(parameters.part_id)
+
+    destination = repository.get_warehouse_by_code(parameters.destination_warehouse_id)
+    if destination is None:
+        raise WarehouseNotFoundError(parameters.destination_warehouse_id)
+
+    executed_at_date = context.executed_at.date()
+    committed_by_warehouse = repository.get_committed_outgoing_transfer_quantities_for_part(parameters.part_id)
+    source_rows = repository.get_source_inventory_positions_for_part(
+        parameters.part_id,
+        parameters.destination_warehouse_id,
+    )
+
+    items: list[AlternativeWarehouseEntry] = []
+    for row in source_rows:
+        estimated_transfer_days = _estimate_transfer_days(
+            source_region=row.region,
+            source_country=row.country,
+            destination_region=destination.region,
+            destination_country=destination.country,
+        )
+        estimated_arrival_date = executed_at_date + timedelta(days=estimated_transfer_days)
+        if estimated_arrival_date > parameters.required_by_date:
+            continue
+
+        latest_departure_date = parameters.required_by_date - timedelta(days=estimated_transfer_days)
+        inbound_rows = repository.get_open_inbound_purchase_orders_for_part_warehouse(
+            parameters.part_id,
+            row.warehouse_id,
+            latest_departure_date,
+        )
+        eligible_source_inbound_quantity = sum((movement.open_quantity for movement in inbound_rows), start=ZERO)
+        committed_outgoing_transfer_quantity = committed_by_warehouse.get(row.warehouse_id, ZERO)
+        transferable_quantity = max(
+            ZERO,
+            row.available_quantity
+            + eligible_source_inbound_quantity
+            - row.safety_stock_quantity
+            - committed_outgoing_transfer_quantity,
+        )
+        if transferable_quantity <= ZERO:
+            continue
+
+        covered_quantity = min(parameters.required_quantity, transferable_quantity)
+        remaining_shortage = max(ZERO, parameters.required_quantity - covered_quantity)
+        estimated_transfer_cost = (
+            TRANSFER_BASE_COST
+            + (covered_quantity * TRANSFER_COST_PER_UNIT_PER_DAY * Decimal(estimated_transfer_days))
+        ).quantize(MONEY_QUANTUM)
+
+        items.append(
+            AlternativeWarehouseEntry(
+                warehouseId=row.warehouse_id,
+                warehouseName=row.warehouse_name,
+                availableQuantity=row.available_quantity,
+                safetyStockQuantity=row.safety_stock_quantity,
+                committedOutgoingTransferQuantity=committed_outgoing_transfer_quantity,
+                transferableQuantity=transferable_quantity,
+                coveredQuantity=covered_quantity,
+                remainingShortage=remaining_shortage,
+                estimatedTransferDays=estimated_transfer_days,
+                estimatedArrivalDate=estimated_arrival_date,
+                estimatedTransferCost=estimated_transfer_cost,
+                feasible=True,
+                infeasibilityReasons=[],
+                estimator=AlternativeWarehouseEstimator(
+                    name=TRANSFER_ESTIMATOR_NAME,
+                    assumptions=TRANSFER_ESTIMATOR_ASSUMPTIONS,
+                ),
+            )
+        )
+
+    items.sort(
+        key=lambda item: (
+            0 if item.covered_quantity >= parameters.required_quantity else 1,
+            item.estimated_arrival_date,
+            item.estimated_transfer_cost,
+            -item.transferable_quantity,
+            item.warehouse_id,
+        )
+    )
+    return FindAlternativeWarehousesResult(items=items)
+
+
+def _estimate_transfer_days(
+    *,
+    source_region: str | None,
+    source_country: str | None,
+    destination_region: str | None,
+    destination_country: str | None,
+) -> int:
+    if source_region and destination_region and source_country and destination_country:
+        if source_region == destination_region and source_country == destination_country:
+            return 1
+    if source_country and destination_country and source_country == destination_country:
+        return 2
+    return 5
 
 def _score_component(raw_score: Decimal, weight: Decimal) -> StockoutRiskScoreComponent:
     return StockoutRiskScoreComponent(

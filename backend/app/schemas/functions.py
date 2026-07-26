@@ -254,3 +254,53 @@ class InventoryAvailabilityResult(ApiBaseModel):
     part_id: str = Field(alias="partId", min_length=1)
     total_available_quantity: Decimal = Field(alias="totalAvailableQuantity")
     warehouses: list[WarehouseAvailabilityEntry] = Field(default_factory=list)
+
+
+
+class FindAlternativeWarehousesParameters(ApiBaseModel):
+    """Stable public input for findAlternativeWarehouses."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    part_id: str = Field(alias="partId", strict=True, min_length=1)
+    destination_warehouse_id: str = Field(alias="destinationWarehouseId", strict=True, min_length=1)
+    required_quantity: Decimal = Field(alias="requiredQuantity", gt=0)
+    required_by_date: date = Field(alias="requiredByDate")
+
+
+class AlternativeWarehouseEstimator(ApiBaseModel):
+    """Named transfer estimator assumptions returned with each candidate."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    name: str = Field(min_length=1)
+    assumptions: list[str] = Field(default_factory=list)
+
+
+class AlternativeWarehouseEntry(ApiBaseModel):
+    """One feasible source warehouse candidate for part transfer coverage."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    warehouse_id: str = Field(alias="warehouseId", min_length=1)
+    warehouse_name: str = Field(alias="warehouseName", min_length=1)
+    available_quantity: Decimal = Field(alias="availableQuantity")
+    safety_stock_quantity: Decimal = Field(alias="safetyStockQuantity")
+    committed_outgoing_transfer_quantity: Decimal = Field(alias="committedOutgoingTransferQuantity")
+    transferable_quantity: Decimal = Field(alias="transferableQuantity")
+    covered_quantity: Decimal = Field(alias="coveredQuantity")
+    remaining_shortage: Decimal = Field(alias="remainingShortage")
+    estimated_transfer_days: int = Field(alias="estimatedTransferDays", ge=0)
+    estimated_arrival_date: date = Field(alias="estimatedArrivalDate")
+    estimated_transfer_cost: Decimal = Field(alias="estimatedTransferCost")
+    feasible: bool
+    infeasibility_reasons: list[str] = Field(alias="infeasibilityReasons", default_factory=list)
+    estimator: AlternativeWarehouseEstimator
+
+
+class FindAlternativeWarehousesResult(ApiBaseModel):
+    """Read-only alternative-warehouse result set."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    items: list[AlternativeWarehouseEntry] = Field(default_factory=list)

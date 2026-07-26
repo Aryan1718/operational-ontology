@@ -2397,3 +2397,98 @@ functions:
           type: array
           items:
             type: string
+
+  findAlternativeWarehouses:
+    key: findAlternativeWarehouses
+    displayName: Find Alternative Warehouses
+    description: Find feasible source warehouses that can transfer inventory for a part.
+    handler: findAlternativeWarehouses
+    readOnly: true
+    inputModel: FindAlternativeWarehousesParameters
+    outputModel: FindAlternativeWarehousesResult
+    parameters:
+      type: object
+      required:
+        - partId
+        - destinationWarehouseId
+        - requiredQuantity
+        - requiredByDate
+      properties:
+        partId:
+          type: string
+          minLength: 1
+        destinationWarehouseId:
+          type: string
+          minLength: 1
+        requiredQuantity:
+          type: number
+          exclusiveMinimum: 0
+        requiredByDate:
+          type: string
+          format: date
+    returns:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - warehouseId
+              - warehouseName
+              - availableQuantity
+              - safetyStockQuantity
+              - committedOutgoingTransferQuantity
+              - transferableQuantity
+              - coveredQuantity
+              - remainingShortage
+              - estimatedTransferDays
+              - estimatedArrivalDate
+              - estimatedTransferCost
+              - feasible
+              - infeasibilityReasons
+              - estimator
+            properties:
+              warehouseId:
+                type: string
+              warehouseName:
+                type: string
+              availableQuantity:
+                type: number
+              safetyStockQuantity:
+                type: number
+              committedOutgoingTransferQuantity:
+                type: number
+              transferableQuantity:
+                type: number
+              coveredQuantity:
+                type: number
+              remainingShortage:
+                type: number
+              estimatedTransferDays:
+                type: integer
+              estimatedArrivalDate:
+                type: string
+                format: date
+              estimatedTransferCost:
+                type: string
+              feasible:
+                type: boolean
+              infeasibilityReasons:
+                type: array
+                items:
+                  type: string
+              estimator:
+                type: object
+                required:
+                  - name
+                  - assumptions
+                properties:
+                  name:
+                    type: string
+                  assumptions:
+                    type: array
+                    items:
+                      type: string

@@ -7,7 +7,11 @@ from app.functions.impacts import (
     find_impacted_parts,
     find_impacted_products,
 )
-from app.functions.inventory import calculate_stockout_risk, get_inventory_availability
+from app.functions.inventory import (
+    calculate_stockout_risk,
+    find_alternative_warehouses,
+    get_inventory_availability,
+)
 from app.functions.registry import FunctionHandlerRegistry, RegisteredFunctionHandler
 from app.schemas.functions import (
     CalculateStockoutRiskParameters,
@@ -16,6 +20,8 @@ from app.schemas.functions import (
     FindImpactedOrdersResult,
     FindImpactedPartsParameters,
     FindImpactedPartsResult,
+    FindAlternativeWarehousesParameters,
+    FindAlternativeWarehousesResult,
     FindImpactedProductsParameters,
     FindImpactedProductsResult,
     GetInventoryAvailabilityParameters,
@@ -56,6 +62,12 @@ def build_function_handler_registry() -> FunctionHandlerRegistry:
                 input_model=GetInventoryAvailabilityParameters,
                 output_model=InventoryAvailabilityResult,
                 execute=get_inventory_availability,
+            ),
+            "findAlternativeWarehouses": RegisteredFunctionHandler(
+                handler_name="findAlternativeWarehouses",
+                input_model=FindAlternativeWarehousesParameters,
+                output_model=FindAlternativeWarehousesResult,
+                execute=find_alternative_warehouses,
             ),
         }
     )
