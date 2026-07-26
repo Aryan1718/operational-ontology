@@ -55,16 +55,18 @@ The reference use case is supply-chain disruption response, especially supplier 
 
 ```text
 Supplier delay
-  ? Impacted parts
-  ? Impacted products
-  ? At-risk customer orders
-  ? Available warehouse inventory
-  ? Alternative purchase orders
-  ? Ranked operational impact
-  ? Mitigation recommendation
-  ? Governed action
-  ? Audit record
+  -> Impacted parts
+  -> Impacted products
+  -> At-risk customer orders
+  -> Available warehouse inventory
+  -> Alternative purchase orders
+  -> Ranked operational impact
+  -> Mitigation recommendation
+  -> Governed action
+  -> Audit record
 ```
+
+![Supply-chain reference scenario diagram](docs/images/supply-chain-reference-scenario-diagram.png)
 
 The context documents define a deterministic supplier-delay scenario in which a delayed supplier causes downstream part, product, and order impact. The repository is meant to demonstrate this workflow through ontology metadata, backend runtimes, read-only analysis functions, governed actions, and later AI-assisted access. The full scenario is not yet implemented end to end.
 
@@ -92,6 +94,8 @@ The context documents define a deterministic supplier-delay scenario in which a 
 ## Architecture Diagram
 
 > A visual architecture diagram for this reference implementation is being designed and will be added here.
+
+![Implementation architecture diagram](docs/images/implementation-architecture-diagram.png)
 
 <!-- TODO: Add the finalized Operational Ontology architecture diagram. -->
 
