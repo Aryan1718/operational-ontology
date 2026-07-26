@@ -66,7 +66,7 @@ Supplier delay
   -> Audit record
 ```
 
-<img src="docs/images/supply-chain-reference-scenario-diagram.png" alt="Supply-chain reference scenario diagram" width="640" />
+<img src="docs/images/supply-chain-reference-scenario-diagram.png" alt="Supply-chain reference scenario diagram" width="420" />
 
 The context documents define a deterministic supplier-delay scenario in which a delayed supplier causes downstream part, product, and order impact. The repository is meant to demonstrate this workflow through ontology metadata, backend runtimes, read-only analysis functions, governed actions, and later AI-assisted access. The full scenario is not yet implemented end to end.
 
@@ -95,7 +95,7 @@ The context documents define a deterministic supplier-delay scenario in which a 
 
 > A visual architecture diagram for this reference implementation is being designed and will be added here.
 
-<img src="docs/images/implementation-architecture-diagram.png" alt="Implementation architecture diagram" width="640" />
+<img src="docs/images/implementation-architecture-diagram.png" alt="Implementation architecture diagram" width="420" />
 
 <!-- TODO: Add the finalized Operational Ontology architecture diagram. -->
 
@@ -244,6 +244,7 @@ Migrations and seed data are intentionally not run automatically in Docker becau
 - Ontology SDK overview: <https://www.palantir.com/docs/foundry/ontology-sdk/overview/>
 - Ontology MCP overview: <https://www.palantir.com/docs/foundry/ontology-mcp/overview/>
 - Foundry datasets: <https://www.palantir.com/docs/foundry/data-integration/datasets/>
+
 
 
 
