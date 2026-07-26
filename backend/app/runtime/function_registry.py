@@ -10,6 +10,7 @@ from app.functions.impacts import (
 from app.functions.inventory import (
     calculate_stockout_risk,
     find_alternative_warehouses,
+    find_expeditable_purchase_orders,
     get_inventory_availability,
 )
 from app.functions.registry import FunctionHandlerRegistry, RegisteredFunctionHandler
@@ -22,6 +23,8 @@ from app.schemas.functions import (
     FindImpactedPartsResult,
     FindAlternativeWarehousesParameters,
     FindAlternativeWarehousesResult,
+    FindExpeditablePurchaseOrdersParameters,
+    FindExpeditablePurchaseOrdersResult,
     FindImpactedProductsParameters,
     FindImpactedProductsResult,
     GetInventoryAvailabilityParameters,
@@ -68,6 +71,12 @@ def build_function_handler_registry() -> FunctionHandlerRegistry:
                 input_model=FindAlternativeWarehousesParameters,
                 output_model=FindAlternativeWarehousesResult,
                 execute=find_alternative_warehouses,
+            ),
+            "findExpeditablePurchaseOrders": RegisteredFunctionHandler(
+                handler_name="findExpeditablePurchaseOrders",
+                input_model=FindExpeditablePurchaseOrdersParameters,
+                output_model=FindExpeditablePurchaseOrdersResult,
+                execute=find_expeditable_purchase_orders,
             ),
         }
     )

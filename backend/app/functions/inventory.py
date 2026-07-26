@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import floor
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -14,8 +15,12 @@ from app.schemas.functions import (
     AlternativeWarehouseEstimator,
     CalculateStockoutRiskParameters,
     CalculateStockoutRiskResult,
+    ExpeditablePurchaseOrderEntry,
+    ExpeditablePurchaseOrderEstimator,
     FindAlternativeWarehousesParameters,
     FindAlternativeWarehousesResult,
+    FindExpeditablePurchaseOrdersParameters,
+    FindExpeditablePurchaseOrdersResult,
     GetInventoryAvailabilityParameters,
     InventoryAvailabilityResult,
     StockoutRiskLedgerEntry,
@@ -46,6 +51,26 @@ PART_CRITICALITY_SCORES = {
     "critical": Decimal("100"),
 }
 
+EXPEDITE_ESTIMATOR_NAME = "configured-expedite-estimator"
+EXPEDITE_ESTIMATOR_ASSUMPTIONS = [
+    "Expedited dates and costs are estimates",
+    "Supplier acceptance is not guaranteed",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class _ExpediteEstimatorConfig:
+    lead_time_reduction_percent: Decimal
+    premium_percent: Decimal
+    minimum_lead_time_days: int
+
+
+DEFAULT_EXPEDITE_ESTIMATOR = _ExpediteEstimatorConfig(
+    lead_time_reduction_percent=Decimal("0.40"),
+    premium_percent=Decimal("0.15"),
+    minimum_lead_time_days=1,
+)
+
 
 class PartNotFoundError(ApplicationError):
     """Raised when a public part identifier does not resolve."""
@@ -56,6 +81,18 @@ class PartNotFoundError(ApplicationError):
             message=f"Part '{part_id}' was not found.",
             status_code=404,
             details={"partId": part_id},
+        )
+
+
+class SupplierNotFoundError(ApplicationError):
+    """Raised when a public supplier identifier does not resolve."""
+
+    def __init__(self, supplier_id: str) -> None:
+        super().__init__(
+            code="SUPPLIER_NOT_FOUND",
+            message=f"Supplier '{supplier_id}' was not found.",
+            status_code=404,
+            details={"supplierId": supplier_id},
         )
 
 
@@ -428,3 +465,83 @@ def _map_risk_level(risk_score: int) -> str:
 
 def _clamp(value: Decimal, minimum: Decimal, maximum: Decimal) -> Decimal:
     return max(minimum, min(maximum, value))
+
+
+
+def find_expeditable_purchase_orders(
+    context: FunctionExecutionContext,
+    parameters: FindExpeditablePurchaseOrdersParameters,
+) -> FindExpeditablePurchaseOrdersResult:
+    """Return eligible purchase-order expedite candidates for the requested part."""
+
+    repository = FunctionRepository(context.session)
+    if not repository.part_exists(parameters.part_id):
+        raise PartNotFoundError(parameters.part_id)
+    if parameters.supplier_id is not None and repository.get_supplier_by_code(parameters.supplier_id) is None:
+        raise SupplierNotFoundError(parameters.supplier_id)
+
+    executed_at_date = context.executed_at.date()
+    candidates = repository.get_expeditable_purchase_orders_for_part(
+        parameters.part_id,
+        parameters.supplier_id,
+    )
+
+    items: list[ExpeditablePurchaseOrderEntry] = []
+    estimator = ExpeditablePurchaseOrderEstimator(
+        name=EXPEDITE_ESTIMATOR_NAME,
+        leadTimeReductionPercent=DEFAULT_EXPEDITE_ESTIMATOR.lead_time_reduction_percent,
+        premiumPercent=DEFAULT_EXPEDITE_ESTIMATOR.premium_percent,
+        minimumLeadTimeDays=DEFAULT_EXPEDITE_ESTIMATOR.minimum_lead_time_days,
+        assumptions=EXPEDITE_ESTIMATOR_ASSUMPTIONS,
+    )
+
+    for candidate in candidates:
+        remaining_lead_time_days = max(0, (candidate.current_expected_date - executed_at_date).days)
+        reduced_days = floor(
+            Decimal(remaining_lead_time_days) * DEFAULT_EXPEDITE_ESTIMATOR.lead_time_reduction_percent
+        )
+        expedited_lead_time_days = max(
+            DEFAULT_EXPEDITE_ESTIMATOR.minimum_lead_time_days,
+            remaining_lead_time_days - reduced_days,
+        )
+        possible_expedited_date = executed_at_date + timedelta(days=expedited_lead_time_days)
+        days_saved = max(0, (candidate.current_expected_date - possible_expedited_date).days)
+        additional_cost = (
+            candidate.current_remaining_value * DEFAULT_EXPEDITE_ESTIMATOR.premium_percent
+        ).quantize(MONEY_QUANTUM)
+        feasible = possible_expedited_date <= parameters.required_by_date
+        infeasibility_reasons = [] if feasible else [
+            (
+                'possibleExpeditedDate exceeds requiredByDate '
+                f'({possible_expedited_date.isoformat()} > {parameters.required_by_date.isoformat()})'
+            )
+        ]
+
+        items.append(
+            ExpeditablePurchaseOrderEntry(
+                purchaseOrderId=candidate.purchase_order_id,
+                purchaseOrderNumber=candidate.purchase_order_number,
+                supplierId=candidate.supplier_id,
+                destinationWarehouseId=candidate.destination_warehouse_id,
+                openQuantity=candidate.open_quantity,
+                currentExpectedDate=candidate.current_expected_date,
+                possibleExpeditedDate=possible_expedited_date,
+                daysSaved=days_saved,
+                currentRemainingValue=candidate.current_remaining_value.quantize(MONEY_QUANTUM),
+                additionalCost=additional_cost,
+                feasible=feasible,
+                infeasibilityReasons=infeasibility_reasons,
+                estimator=estimator,
+            )
+        )
+
+    items.sort(
+        key=lambda item: (
+            0 if item.feasible else 1,
+            item.possible_expedited_date,
+            item.additional_cost,
+            -item.open_quantity,
+            item.purchase_order_id,
+        )
+    )
+    return FindExpeditablePurchaseOrdersResult(items=items)

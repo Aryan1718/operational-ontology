@@ -34,6 +34,7 @@ ACTIVE_PRODUCT_STATUS = "active"
 ACTIVE_SUPPLIER_PART_STATUS = "active"
 OPEN_CUSTOMER_ORDER_STATUSES = ("open", "allocated", "partially_allocated", "delayed")
 OPEN_PURCHASE_ORDER_STATUSES = ("confirmed", "partially_received", "delayed")
+EXPEDITABLE_PURCHASE_ORDER_STATUSES = ("confirmed", "partially_received", "delayed")
 OPEN_SHIPMENT_STATUSES = ("planned", "allocated", "in_transit", "delayed")
 
 
@@ -577,6 +578,19 @@ class CommittedTransferQuantityRow:
     quantity: Decimal
 
 
+@dataclass(frozen=True, slots=True)
+class ExpeditablePurchaseOrderCandidateRow:
+    """Aggregated purchase-order expedite candidate for one part."""
+
+    purchase_order_id: str
+    purchase_order_number: str
+    supplier_id: str
+    destination_warehouse_id: str | None
+    current_expected_date: date
+    open_quantity: Decimal
+    current_remaining_value: Decimal
+
+
 def _warehouse_exists(self: FunctionRepository, warehouse_id: str) -> bool:
     statement = select(Warehouse.id).where(Warehouse.warehouse_code == warehouse_id)
     return self._session.execute(statement).scalar_one_or_none() is not None
@@ -798,3 +812,110 @@ FunctionRepository.get_part_by_code = _get_part_by_code
 FunctionRepository.get_warehouse_by_code = _get_warehouse_by_code
 FunctionRepository.get_source_inventory_positions_for_part = _get_source_inventory_positions_for_part
 FunctionRepository.get_committed_outgoing_transfer_quantities_for_part = _get_committed_outgoing_transfer_quantities_for_part
+
+
+
+def _get_supplier_by_code(self: FunctionRepository, supplier_id: str) -> Supplier | None:
+    statement = select(Supplier).where(Supplier.supplier_code == supplier_id)
+    return self._session.execute(statement).scalar_one_or_none()
+
+
+
+def _get_expeditable_purchase_orders_for_part(
+    self: FunctionRepository,
+    part_id: str,
+    supplier_id: str | None = None,
+) -> list[ExpeditablePurchaseOrderCandidateRow]:
+    statement = (
+        select(
+            PurchaseOrder.purchase_order_code,
+            PurchaseOrder.purchase_order_code,
+            Supplier.supplier_code,
+            Warehouse.warehouse_code,
+            PurchaseOrder.expected_delivery_date,
+            PurchaseOrderItem.quantity_ordered,
+            PurchaseOrderItem.quantity_received,
+            PurchaseOrderItem.unit_cost,
+        )
+        .join(PurchaseOrderItem, PurchaseOrderItem.purchase_order_id == PurchaseOrder.id)
+        .join(Part, Part.id == PurchaseOrderItem.part_id)
+        .join(Supplier, Supplier.id == PurchaseOrder.supplier_id)
+        .outerjoin(Inventory, (Inventory.part_id == Part.id) & (Inventory.item_type == "part"))
+        .outerjoin(Warehouse, Warehouse.id == Inventory.warehouse_id)
+        .where(
+            PurchaseOrder.status.in_(EXPEDITABLE_PURCHASE_ORDER_STATUSES),
+            PurchaseOrder.expected_delivery_date.is_not(None),
+            Part.part_code == part_id,
+        )
+        .order_by(
+            PurchaseOrder.expected_delivery_date.asc(),
+            PurchaseOrder.purchase_order_code.asc(),
+            Warehouse.warehouse_code.asc(),
+            PurchaseOrderItem.id.asc(),
+        )
+    )
+    if supplier_id is not None:
+        statement = statement.where(Supplier.supplier_code == supplier_id)
+
+    aggregates: dict[str, dict[str, object]] = {}
+    for (
+        purchase_order_id,
+        purchase_order_number,
+        supplier_code,
+        destination_warehouse_id,
+        expected_delivery_date,
+        quantity_ordered,
+        quantity_received,
+        unit_cost,
+    ) in self._session.execute(statement).all():
+        open_quantity = max(ZERO, quantity_ordered - quantity_received)
+        if open_quantity <= ZERO or expected_delivery_date is None:
+            continue
+
+        aggregate = aggregates.setdefault(
+            purchase_order_id,
+            {
+                "purchase_order_id": purchase_order_id,
+                "purchase_order_number": purchase_order_number,
+                "supplier_id": supplier_code,
+                "destination_warehouse_id": destination_warehouse_id,
+                "current_expected_date": expected_delivery_date,
+                "open_quantity": ZERO,
+                "current_remaining_value": ZERO,
+            },
+        )
+        current_destination = aggregate["destination_warehouse_id"]
+        if current_destination is None and destination_warehouse_id is not None:
+            aggregate["destination_warehouse_id"] = destination_warehouse_id
+        elif current_destination is not None and destination_warehouse_id is not None:
+            aggregate["destination_warehouse_id"] = min(current_destination, destination_warehouse_id)
+
+        aggregate["open_quantity"] = aggregate["open_quantity"] + open_quantity
+        line_unit_cost = unit_cost if unit_cost is not None else ZERO
+        aggregate["current_remaining_value"] = aggregate["current_remaining_value"] + (open_quantity * line_unit_cost)
+
+    rows = [
+        ExpeditablePurchaseOrderCandidateRow(
+            purchase_order_id=aggregate["purchase_order_id"],
+            purchase_order_number=aggregate["purchase_order_number"],
+            supplier_id=aggregate["supplier_id"],
+            destination_warehouse_id=aggregate["destination_warehouse_id"],
+            current_expected_date=aggregate["current_expected_date"],
+            open_quantity=aggregate["open_quantity"],
+            current_remaining_value=aggregate["current_remaining_value"],
+        )
+        for aggregate in aggregates.values()
+        if aggregate["open_quantity"] > ZERO
+    ]
+    rows.sort(
+        key=lambda row: (
+            row.current_expected_date,
+            row.purchase_order_id,
+            row.destination_warehouse_id or "",
+        )
+    )
+    return rows
+
+
+FunctionRepository.get_supplier_by_code = _get_supplier_by_code
+FunctionRepository.get_expeditable_purchase_orders_for_part = _get_expeditable_purchase_orders_for_part

@@ -304,3 +304,53 @@ class FindAlternativeWarehousesResult(ApiBaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     items: list[AlternativeWarehouseEntry] = Field(default_factory=list)
+
+class FindExpeditablePurchaseOrdersParameters(ApiBaseModel):
+    """Stable public input for findExpeditablePurchaseOrders."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    part_id: str = Field(alias="partId", strict=True, min_length=1)
+    supplier_id: str | None = Field(alias="supplierId", default=None, min_length=1)
+    required_by_date: date = Field(alias="requiredByDate")
+
+
+class ExpeditablePurchaseOrderEstimator(ApiBaseModel):
+    """Named expedite estimator assumptions returned with each candidate."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    name: str = Field(min_length=1)
+    lead_time_reduction_percent: Decimal = Field(alias="leadTimeReductionPercent")
+    premium_percent: Decimal = Field(alias="premiumPercent")
+    minimum_lead_time_days: int = Field(alias="minimumLeadTimeDays", ge=0)
+    assumptions: list[str] = Field(default_factory=list)
+
+
+class ExpeditablePurchaseOrderEntry(ApiBaseModel):
+    """One feasible purchase-order expedite candidate for a part."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    purchase_order_id: str = Field(alias="purchaseOrderId", min_length=1)
+    purchase_order_number: str = Field(alias="purchaseOrderNumber", min_length=1)
+    supplier_id: str = Field(alias="supplierId", min_length=1)
+    destination_warehouse_id: str | None = Field(alias="destinationWarehouseId", default=None)
+    open_quantity: Decimal = Field(alias="openQuantity")
+    current_expected_date: date = Field(alias="currentExpectedDate")
+    possible_expedited_date: date = Field(alias="possibleExpeditedDate")
+    days_saved: int = Field(alias="daysSaved", ge=0)
+    current_remaining_value: Decimal = Field(alias="currentRemainingValue")
+    additional_cost: Decimal = Field(alias="additionalCost")
+    feasible: bool
+    infeasibility_reasons: list[str] = Field(alias="infeasibilityReasons", default_factory=list)
+    estimator: ExpeditablePurchaseOrderEstimator
+
+
+class FindExpeditablePurchaseOrdersResult(ApiBaseModel):
+    """Read-only expeditable-purchase-orders result set."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    items: list[ExpeditablePurchaseOrderEntry] = Field(default_factory=list)
+

@@ -2492,3 +2492,100 @@ functions:
                     type: array
                     items:
                       type: string
+
+
+  findExpeditablePurchaseOrders:
+  key: findExpeditablePurchaseOrders
+  displayName: Find Expeditable Purchase Orders
+  description: Find feasible purchase orders that can be expedited for a part.
+  handler: findExpeditablePurchaseOrders
+  readOnly: true
+  inputModel: FindExpeditablePurchaseOrdersParameters
+  outputModel: FindExpeditablePurchaseOrdersResult
+  parameters:
+    type: object
+    required:
+      - partId
+      - requiredByDate
+    properties:
+      partId:
+        type: string
+        minLength: 1
+      supplierId:
+        type: string
+        minLength: 1
+      requiredByDate:
+        type: string
+        format: date
+  returns:
+    type: object
+    required:
+      - items
+    properties:
+      items:
+        type: array
+        items:
+          type: object
+          required:
+            - purchaseOrderId
+            - purchaseOrderNumber
+            - supplierId
+            - openQuantity
+            - currentExpectedDate
+            - possibleExpeditedDate
+            - daysSaved
+            - currentRemainingValue
+            - additionalCost
+            - feasible
+            - infeasibilityReasons
+            - estimator
+          properties:
+            purchaseOrderId:
+              type: string
+            purchaseOrderNumber:
+              type: string
+            supplierId:
+              type: string
+            destinationWarehouseId:
+              type: string
+            openQuantity:
+              type: number
+            currentExpectedDate:
+              type: string
+              format: date
+            possibleExpeditedDate:
+              type: string
+              format: date
+            daysSaved:
+              type: integer
+            currentRemainingValue:
+              type: string
+            additionalCost:
+              type: string
+            feasible:
+              type: boolean
+            infeasibilityReasons:
+              type: array
+              items:
+                type: string
+            estimator:
+              type: object
+              required:
+                - name
+                - leadTimeReductionPercent
+                - premiumPercent
+                - minimumLeadTimeDays
+                - assumptions
+              properties:
+                name:
+                  type: string
+                leadTimeReductionPercent:
+                  type: number
+                premiumPercent:
+                  type: number
+                minimumLeadTimeDays:
+                  type: integer
+                assumptions:
+                  type: array
+                  items:
+                    type: string
