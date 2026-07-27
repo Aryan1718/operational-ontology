@@ -411,55 +411,19 @@ class RecommendMitigationPlanParameters(ApiBaseModel):
     risk_event_id: str = Field(alias="riskEventId", strict=True, min_length=1)
 
 
-class RecommendedMitigationExpectedBenefit(ApiBaseModel):
-    """Structured projected benefit for one mitigation step."""
+class MitigationRecommendationEntry(ApiBaseModel):
+    """One structured mitigation recommendation derived from read-only analysis."""
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    quantity_recovered: Decimal = Field(alias="quantityRecovered")
-    impacted_order_ids: list[str] = Field(alias="impactedOrderIds", default_factory=list)
-    projected_revenue_protected: Decimal = Field(alias="projectedRevenueProtected")
+    type: str = Field(min_length=1)
+    part_id: str = Field(alias="partId", min_length=1)
+    source_warehouse_id: str | None = Field(alias="sourceWarehouseId", default=None)
+    destination_warehouse_id: str | None = Field(alias="destinationWarehouseId", default=None)
+    purchase_order_id: str | None = Field(alias="purchaseOrderId", default=None)
+    quantity: Decimal
     expected_arrival_date: date | None = Field(alias="expectedArrivalDate", default=None)
-
-
-class RecommendedMitigationStep(ApiBaseModel):
-    """One read-only mitigation step shaped like a governed action input."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="forbid")
-
-    sequence_number: int = Field(alias="sequenceNumber", ge=1)
-    step_type: str = Field(alias="stepType", min_length=1)
-    target_object_type: str = Field(alias="targetObjectType", min_length=1)
-    target_object_id: str = Field(alias="targetObjectId", min_length=1)
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    estimated_cost: Decimal = Field(alias="estimatedCost")
-    expected_benefit: RecommendedMitigationExpectedBenefit = Field(alias="expectedBenefit")
-    evidence: dict[str, Any] = Field(default_factory=dict)
-
-
-class MitigationStrategyAlternative(ApiBaseModel):
-    """One candidate strategy included alongside the recommendation."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="forbid")
-
-    strategy: str = Field(min_length=1)
-    feasible: bool
-    estimated_cost: Decimal = Field(alias="estimatedCost")
-    projected_orders_recovered: int = Field(alias="projectedOrdersRecovered", ge=0)
-    projected_revenue_protected: Decimal = Field(alias="projectedRevenueProtected")
-    rejection_reasons: list[str] = Field(alias="rejectionReasons", default_factory=list)
-
-
-class MitigationRecommendationEvidence(ApiBaseModel):
-    """Shared evidence metadata for the recommendation snapshot."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="forbid")
-
-    impacted_part_ids: list[str] = Field(alias="impactedPartIds", default_factory=list)
-    impacted_product_ids: list[str] = Field(alias="impactedProductIds", default_factory=list)
-    impacted_order_ids: list[str] = Field(alias="impactedOrderIds", default_factory=list)
-    ranked_order_ids: list[str] = Field(alias="rankedOrderIds", default_factory=list)
-    snapshot_executed_at: date = Field(alias="snapshotExecutedAt")
+    reason: str = Field(min_length=1)
 
 
 class RecommendMitigationPlanResult(ApiBaseModel):
@@ -469,15 +433,9 @@ class RecommendMitigationPlanResult(ApiBaseModel):
 
     risk_event_id: str = Field(alias="riskEventId", min_length=1)
     recommended_strategy: str = Field(alias="recommendedStrategy", min_length=1)
-    summary: str = Field(min_length=1)
+    priority: str = Field(min_length=1)
     confidence_score: Decimal = Field(alias="confidenceScore", ge=0, le=1)
-    estimated_cost: Decimal = Field(alias="estimatedCost")
-    projected_orders_recovered: int = Field(alias="projectedOrdersRecovered", ge=0)
-    projected_revenue_protected: Decimal = Field(alias="projectedRevenueProtected")
-    remaining_at_risk_order_ids: list[str] = Field(alias="remainingAtRiskOrderIds", default_factory=list)
-    mitigation_steps: list[RecommendedMitigationStep] = Field(alias="mitigationSteps", default_factory=list)
-    alternative_strategies: list[MitigationStrategyAlternative] = Field(alias="alternativeStrategies", default_factory=list)
-    assumptions: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    evidence: MitigationRecommendationEvidence
+    affected_order_ids: list[str] = Field(alias="affectedOrderIds", default_factory=list)
+    recommendations: list[MitigationRecommendationEntry] = Field(default_factory=list)
+    unresolved_shortage_quantity: Decimal = Field(alias="unresolvedShortageQuantity")
     explanation: str = Field(min_length=1)

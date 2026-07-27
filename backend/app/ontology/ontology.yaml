@@ -2669,75 +2669,74 @@ functions:
                     type: string
 
 
-recommendMitigationPlan:
-  key: recommendMitigationPlan
-  displayName: Recommend Mitigation Plan
-  description: Recommend a read-only mitigation strategy for a risk event.
-  handler: recommendMitigationPlan
-  readOnly: true
-  inputModel: RecommendMitigationPlanParameters
-  outputModel: RecommendMitigationPlanResult
-  parameters:
-    type: object
-    required:
-      - riskEventId
-    properties:
-      riskEventId:
-        type: string
-        minLength: 1
-  returns:
-    type: object
-    required:
-      - riskEventId
-      - recommendedStrategy
-      - summary
-      - confidenceScore
-      - estimatedCost
-      - projectedOrdersRecovered
-      - projectedRevenueProtected
-      - remainingAtRiskOrderIds
-      - mitigationSteps
-      - alternativeStrategies
-      - assumptions
-      - warnings
-      - evidence
-      - explanation
-    properties:
-      riskEventId:
-        type: string
-      recommendedStrategy:
-        type: string
-      summary:
-        type: string
-      confidenceScore:
-        type: number
-      estimatedCost:
-        type: string
-      projectedOrdersRecovered:
-        type: integer
-      projectedRevenueProtected:
-        type: string
-      remainingAtRiskOrderIds:
-        type: array
-        items:
+  recommendMitigationPlan:
+    key: recommendMitigationPlan
+    displayName: Recommend Mitigation Plan
+    description: Recommend a read-only mitigation strategy for a risk event.
+    handler: recommendMitigationPlan
+    readOnly: true
+    inputModel: RecommendMitigationPlanParameters
+    outputModel: RecommendMitigationPlanResult
+    parameters:
+      type: object
+      required:
+        - riskEventId
+      properties:
+        riskEventId:
           type: string
-      mitigationSteps:
-        type: array
-        items:
-          type: object
-      alternativeStrategies:
-        type: array
-        items:
-          type: object
-      assumptions:
-        type: array
-        items:
+          minLength: 1
+    returns:
+      type: object
+      required:
+        - riskEventId
+        - recommendedStrategy
+        - priority
+        - confidenceScore
+        - affectedOrderIds
+        - recommendations
+        - unresolvedShortageQuantity
+        - explanation
+      properties:
+        riskEventId:
           type: string
-      warnings:
-        type: array
-        items:
+        recommendedStrategy:
           type: string
-      evidence:
-        type: object
-      explanation:
-        type: string
+        priority:
+          type: string
+        confidenceScore:
+          type: number
+        affectedOrderIds:
+          type: array
+          items:
+            type: string
+        recommendations:
+          type: array
+          items:
+            type: object
+            required:
+              - type
+              - partId
+              - quantity
+              - reason
+            properties:
+              type:
+                type: string
+              partId:
+                type: string
+              sourceWarehouseId:
+                type: string
+              destinationWarehouseId:
+                type: string
+              purchaseOrderId:
+                type: string
+              quantity:
+                type: number
+              expectedArrivalDate:
+                type: string
+                format: date
+              reason:
+                type: string
+        unresolvedShortageQuantity:
+          type: number
+        explanation:
+          type: string
