@@ -25,18 +25,44 @@ from app.core.config import get_settings
 from app.core.exceptions import ApplicationError, AuthorizationDeniedError
 from app.core.logging import configure_logging
 from app.ontology.loader import load_ontology_registry
+from app.runtime.action_registry import build_action_handler_registry
 from app.runtime.authorization_service import AuthorizationService
 from app.runtime.function_registry import build_function_handler_registry
 
 logger = logging.getLogger(__name__)
+
+KNOWN_FUNCTION_HANDLERS = {
+    "getInventoryAvailability",
+    "calculateStockoutRisk",
+    "findImpactedParts",
+    "findImpactedProducts",
+    "findImpactedOrders",
+    "rankImpactedOrders",
+    "findAlternativeWarehouses",
+    "findExpeditablePurchaseOrders",
+    "recommendMitigationPlan",
+}
+KNOWN_ACTION_HANDLERS = {
+    "generateMitigationPlan",
+    "approveMitigationPlan",
+    "reallocateInventory",
+}
 
 
 def _validate_registered_function_handlers(application: FastAPI) -> None:
     handler_registry = application.state.function_handler_registry
     registry = application.state.ontology_registry
     for function_definition in registry.functions:
-        if function_definition.handler in {'getInventoryAvailability', 'calculateStockoutRisk', 'findImpactedParts', 'findImpactedProducts', 'findImpactedOrders', 'rankImpactedOrders', 'findAlternativeWarehouses', 'findExpeditablePurchaseOrders', 'recommendMitigationPlan'}:
+        if function_definition.handler in KNOWN_FUNCTION_HANDLERS:
             handler_registry.require(function_definition.handler)
+
+
+def _validate_registered_action_handlers(application: FastAPI) -> None:
+    handler_registry = application.state.action_handler_registry
+    registry = application.state.ontology_registry
+    for action_definition in registry.action_types:
+        if action_definition.handler in KNOWN_ACTION_HANDLERS:
+            handler_registry.require(action_definition.handler)
 
 
 @asynccontextmanager
@@ -46,11 +72,14 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     ontology_registry = load_ontology_registry()
     authorization_service = AuthorizationService(ontology_registry.permission_registry)
     function_handler_registry = build_function_handler_registry()
+    action_handler_registry = build_action_handler_registry()
     application.state.ontology_registry = ontology_registry
     application.state.permission_registry = ontology_registry.permission_registry
     application.state.authorization_service = authorization_service
     application.state.function_handler_registry = function_handler_registry
+    application.state.action_handler_registry = action_handler_registry
     _validate_registered_function_handlers(application)
+    _validate_registered_action_handlers(application)
     yield
 
 
@@ -148,6 +177,3 @@ def create_application() -> FastAPI:
 
 
 app = create_application()
-
-
-

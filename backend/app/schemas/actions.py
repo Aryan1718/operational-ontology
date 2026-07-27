@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, field_validator
 
 from app.schemas.common import ApiBaseModel
 
@@ -53,4 +53,83 @@ class GenerateMitigationPlanResult(ApiBaseModel):
     step_ids: list[str] = Field(alias="stepIds", default_factory=list)
     step_count: int = Field(alias="stepCount", ge=0)
     created_at: datetime = Field(alias="createdAt")
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ApproveMitigationPlanParameters(ApiBaseModel):
+    """Stable public input for approveMitigationPlan."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    mitigation_plan_id: str = Field(alias="mitigationPlanId", min_length=1)
+    reason: str = Field(min_length=1)
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Reason must not be empty.")
+        return normalized
+
+
+class ApproveMitigationPlanResult(ApiBaseModel):
+    """Approved mitigation plan summary."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    mitigation_plan_id: str = Field(alias="mitigationPlanId")
+    previous_status: str = Field(alias="previousStatus")
+    new_status: str = Field(alias="newStatus")
+    approved_by: str = Field(alias="approvedBy")
+    approved_at: datetime = Field(alias="approvedAt")
+    approved_estimated_cost: Decimal | None = Field(alias="approvedEstimatedCost", default=None)
+    warnings: list[str] = Field(default_factory=list)
+
+class ReallocateInventoryParameters(ApiBaseModel):
+    """Stable public input for reallocateInventory."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    mitigation_plan_id: str = Field(alias="mitigationPlanId", min_length=1)
+    source_warehouse_id: str = Field(alias="sourceWarehouseId", min_length=1)
+    destination_warehouse_id: str = Field(alias="destinationWarehouseId", min_length=1)
+    part_id: str = Field(alias="partId", min_length=1)
+    quantity: Decimal = Field(gt=0)
+    reason: str = Field(min_length=1)
+
+    @field_validator("reason")
+    @classmethod
+    def _validate_reallocation_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Reason must not be empty.")
+        return normalized
+
+
+class ReallocatedInventoryPosition(ApiBaseModel):
+    """Updated inventory position summary returned by reallocateInventory."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    inventory_position_id: str = Field(alias="inventoryPositionId")
+    warehouse_id: str = Field(alias="warehouseId")
+    part_id: str = Field(alias="partId")
+    on_hand_quantity: Decimal = Field(alias="onHandQuantity")
+    reserved_quantity: Decimal = Field(alias="reservedQuantity")
+    available_quantity: Decimal = Field(alias="availableQuantity")
+
+
+class ReallocateInventoryResult(ApiBaseModel):
+    """Atomic inventory reallocation result."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    mitigation_plan_id: str = Field(alias="mitigationPlanId")
+    part_id: str = Field(alias="partId")
+    transfer_quantity: Decimal = Field(alias="transferQuantity")
+    source_warehouse_id: str = Field(alias="sourceWarehouseId")
+    destination_warehouse_id: str = Field(alias="destinationWarehouseId")
+    source_inventory: ReallocatedInventoryPosition = Field(alias="sourceInventory")
+    destination_inventory: ReallocatedInventoryPosition = Field(alias="destinationInventory")
     warnings: list[str] = Field(default_factory=list)
