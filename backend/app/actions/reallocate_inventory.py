@@ -77,21 +77,21 @@ class InventoryItemMismatchError(ApplicationError):
 
 
 class InsufficientInventoryError(ApplicationError):
-    """Raised when the source warehouse lacks enough available inventory."""
+    """Raised when the source warehouse lacks enough transferable inventory."""
 
     def __init__(
         self,
         warehouse_id: str,
-        available_quantity: Decimal,
+        transferable_quantity: Decimal,
         requested_quantity: Decimal,
     ) -> None:
         super().__init__(
             code="INSUFFICIENT_SOURCE_INVENTORY",
-            message="The source warehouse does not have enough available inventory.",
+            message="The source warehouse does not have enough transferable inventory.",
             status_code=409,
             details={
                 "warehouseId": warehouse_id,
-                "availableQuantity": str(available_quantity),
+                "transferableQuantity": str(transferable_quantity),
                 "requestedQuantity": str(requested_quantity),
             },
         )
@@ -104,36 +104,32 @@ def reallocate_inventory(
     """Move one approved part inventory quantity between two warehouses atomically."""
     if parameters.quantity <= ZERO:
         raise InvalidTransferQuantityError(parameters.quantity)
-    if parameters.source_warehouse_id == parameters.destination_warehouse_id:
-        raise SameWarehouseTransferError(parameters.source_warehouse_id)
+    if parameters.from_warehouse_id == parameters.to_warehouse_id:
+        raise SameWarehouseTransferError(parameters.from_warehouse_id)
 
     plan = _load_mitigation_plan_for_update(context, parameters.mitigation_plan_id)
     if plan.status != EXECUTABLE_PLAN_STATUS:
         raise MitigationPlanNotApprovedError(parameters.mitigation_plan_id, plan.status)
+
+    _require_part_exists(context, parameters.part_id)
+    _require_warehouse_exists(context, parameters.from_warehouse_id)
+    _require_warehouse_exists(context, parameters.to_warehouse_id)
 
     source_inventory, destination_inventory = _load_inventory_pair_for_update(context, parameters)
     _validate_inventory_pair(source_inventory, destination_inventory, parameters)
 
     previous_source_quantity = source_inventory.on_hand_quantity
     previous_destination_quantity = destination_inventory.on_hand_quantity
-    available_quantity = source_inventory.on_hand_quantity - source_inventory.reserved_quantity
-    if available_quantity < parameters.quantity:
+    transferable_quantity = _calculate_transferable_quantity(source_inventory)
+    if transferable_quantity < parameters.quantity:
         raise InsufficientInventoryError(
-            parameters.source_warehouse_id,
-            available_quantity,
+            parameters.from_warehouse_id,
+            transferable_quantity,
             parameters.quantity,
         )
 
-    new_source_quantity = source_inventory.on_hand_quantity - parameters.quantity
-    if new_source_quantity < ZERO:
-        raise InsufficientInventoryError(
-            parameters.source_warehouse_id,
-            available_quantity,
-            parameters.quantity,
-        )
-
-    source_inventory.on_hand_quantity = new_source_quantity
-    destination_inventory.on_hand_quantity = destination_inventory.on_hand_quantity + parameters.quantity
+    source_inventory.on_hand_quantity = previous_source_quantity - parameters.quantity
+    destination_inventory.on_hand_quantity = previous_destination_quantity + parameters.quantity
 
     _mark_matching_reallocation_step_executed(
         context=context,
@@ -145,37 +141,43 @@ def reallocate_inventory(
     _record_inventory_audit(
         context=context,
         inventory=source_inventory,
-        warehouse_id=parameters.source_warehouse_id,
+        inventory_role="source",
+        warehouse_id=parameters.from_warehouse_id,
         part_id=parameters.part_id,
         previous_quantity=previous_source_quantity,
         new_quantity=source_inventory.on_hand_quantity,
+        counterpart_warehouse_id=parameters.to_warehouse_id,
+        counterpart_previous_quantity=previous_destination_quantity,
+        counterpart_new_quantity=destination_inventory.on_hand_quantity,
         parameters=parameters,
     )
     _record_inventory_audit(
         context=context,
         inventory=destination_inventory,
-        warehouse_id=parameters.destination_warehouse_id,
+        inventory_role="destination",
+        warehouse_id=parameters.to_warehouse_id,
         part_id=parameters.part_id,
         previous_quantity=previous_destination_quantity,
         new_quantity=destination_inventory.on_hand_quantity,
+        counterpart_warehouse_id=parameters.from_warehouse_id,
+        counterpart_previous_quantity=previous_source_quantity,
+        counterpart_new_quantity=source_inventory.on_hand_quantity,
         parameters=parameters,
     )
 
     return ReallocateInventoryResult(
         mitigationPlanId=parameters.mitigation_plan_id,
         partId=parameters.part_id,
-        transferQuantity=parameters.quantity,
-        sourceWarehouseId=parameters.source_warehouse_id,
-        destinationWarehouseId=parameters.destination_warehouse_id,
+        quantity=parameters.quantity,
         sourceInventory=_build_result_position(
-            source_inventory,
-            parameters.source_warehouse_id,
-            parameters.part_id,
+            warehouse_id=parameters.from_warehouse_id,
+            previous_quantity=previous_source_quantity,
+            new_quantity=source_inventory.on_hand_quantity,
         ),
         destinationInventory=_build_result_position(
-            destination_inventory,
-            parameters.destination_warehouse_id,
-            parameters.part_id,
+            warehouse_id=parameters.to_warehouse_id,
+            previous_quantity=previous_destination_quantity,
+            new_quantity=destination_inventory.on_hand_quantity,
         ),
         warnings=[],
     )
@@ -196,13 +198,30 @@ def _load_mitigation_plan_for_update(
     return plan
 
 
+def _require_part_exists(context: ActionExecutionContext, part_id: str) -> None:
+    statement = select(Part.id).where(Part.part_code == part_id)
+    resolved = context.session.execute(statement).scalar_one_or_none()
+    if resolved is None:
+        raise ObjectNotFoundError("Part", part_id)
+
+
+def _require_warehouse_exists(
+    context: ActionExecutionContext,
+    warehouse_id: str,
+) -> None:
+    statement = select(Warehouse.id).where(Warehouse.warehouse_code == warehouse_id)
+    resolved = context.session.execute(statement).scalar_one_or_none()
+    if resolved is None:
+        raise ObjectNotFoundError("Warehouse", warehouse_id)
+
+
 def _load_inventory_pair_for_update(
     context: ActionExecutionContext,
     parameters: ReallocateInventoryParameters,
 ) -> tuple[Inventory, Inventory]:
     ordering = case(
-        (Warehouse.warehouse_code == parameters.source_warehouse_id, 0),
-        (Warehouse.warehouse_code == parameters.destination_warehouse_id, 1),
+        (Warehouse.warehouse_code == parameters.from_warehouse_id, 0),
+        (Warehouse.warehouse_code == parameters.to_warehouse_id, 1),
         else_=2,
     )
     statement = (
@@ -211,9 +230,7 @@ def _load_inventory_pair_for_update(
         .join(Part, Part.id == Inventory.part_id)
         .where(
             Inventory.item_type == "part",
-            Warehouse.warehouse_code.in_(
-                (parameters.source_warehouse_id, parameters.destination_warehouse_id)
-            ),
+            Warehouse.warehouse_code.in_((parameters.from_warehouse_id, parameters.to_warehouse_id)),
             Part.part_code == parameters.part_id,
         )
         .order_by(ordering, Warehouse.warehouse_code.asc(), Inventory.id.asc())
@@ -223,20 +240,20 @@ def _load_inventory_pair_for_update(
     source_inventory = None
     destination_inventory = None
     for inventory, warehouse_code in context.session.execute(statement).all():
-        if warehouse_code == parameters.source_warehouse_id:
+        if warehouse_code == parameters.from_warehouse_id:
             source_inventory = inventory
-        elif warehouse_code == parameters.destination_warehouse_id:
+        elif warehouse_code == parameters.to_warehouse_id:
             destination_inventory = inventory
 
     if source_inventory is None:
         raise ObjectNotFoundError(
             "InventoryPosition",
-            f"{parameters.source_warehouse_id}:{parameters.part_id}",
+            f"{parameters.from_warehouse_id}:{parameters.part_id}",
         )
     if destination_inventory is None:
         raise ObjectNotFoundError(
             "InventoryPosition",
-            f"{parameters.destination_warehouse_id}:{parameters.part_id}",
+            f"{parameters.to_warehouse_id}:{parameters.part_id}",
         )
     return source_inventory, destination_inventory
 
@@ -254,6 +271,14 @@ def _validate_inventory_pair(
         or source_inventory.part_id != destination_inventory.part_id
     ):
         raise InventoryItemMismatchError(parameters.part_id)
+
+
+
+def _calculate_transferable_quantity(inventory: Inventory) -> Decimal:
+    return max(
+        ZERO,
+        inventory.on_hand_quantity - inventory.reserved_quantity - inventory.safety_stock_quantity,
+    )
 
 
 def _mark_matching_reallocation_step_executed(
@@ -279,8 +304,8 @@ def _mark_matching_reallocation_step_executed(
             MitigationPlanStep.mitigation_plan_id == mitigation_plan_db_id,
             MitigationPlanStep.action_type == "reallocate_inventory",
             MitigationPlanStep.status.in_(tuple(STEP_EXECUTION_STATUSES)),
-            source_warehouse.warehouse_code == parameters.source_warehouse_id,
-            destination_warehouse.warehouse_code == parameters.destination_warehouse_id,
+            source_warehouse.warehouse_code == parameters.from_warehouse_id,
+            destination_warehouse.warehouse_code == parameters.to_warehouse_id,
             Part.part_code == parameters.part_id,
             MitigationPlanStep.quantity == parameters.quantity,
         )
@@ -298,10 +323,14 @@ def _record_inventory_audit(
     *,
     context: ActionExecutionContext,
     inventory: Inventory,
+    inventory_role: str,
     warehouse_id: str,
     part_id: str,
     previous_quantity: Decimal,
     new_quantity: Decimal,
+    counterpart_warehouse_id: str,
+    counterpart_previous_quantity: Decimal,
+    counterpart_new_quantity: Decimal,
     parameters: ReallocateInventoryParameters,
 ) -> None:
     context.session.add(
@@ -312,20 +341,24 @@ def _record_inventory_audit(
             object_id=inventory.id,
             previous_value=_build_audit_state(
                 context=context,
+                inventory_role=inventory_role,
                 inventory=inventory,
                 warehouse_id=warehouse_id,
                 part_id=part_id,
-                previous_quantity=previous_quantity,
-                new_quantity=new_quantity,
+                quantity=previous_quantity,
+                counterpart_warehouse_id=counterpart_warehouse_id,
+                counterpart_quantity=counterpart_previous_quantity,
                 parameters=parameters,
             ),
             new_value=_build_audit_state(
                 context=context,
+                inventory_role=inventory_role,
                 inventory=inventory,
                 warehouse_id=warehouse_id,
                 part_id=part_id,
-                previous_quantity=previous_quantity,
-                new_quantity=new_quantity,
+                quantity=new_quantity,
+                counterpart_warehouse_id=counterpart_warehouse_id,
+                counterpart_quantity=counterpart_new_quantity,
                 parameters=parameters,
             ),
             reason=parameters.reason,
@@ -337,45 +370,47 @@ def _record_inventory_audit(
 def _build_audit_state(
     *,
     context: ActionExecutionContext,
+    inventory_role: str,
     inventory: Inventory,
     warehouse_id: str,
     part_id: str,
-    previous_quantity: Decimal,
-    new_quantity: Decimal,
+    quantity: Decimal,
+    counterpart_warehouse_id: str,
+    counterpart_quantity: Decimal,
     parameters: ReallocateInventoryParameters,
 ) -> dict[str, object]:
     return {
         "actor": context.actor.actor_id,
         "actionType": "reallocateInventory",
+        "requestId": context.request_id,
+        "inventoryRole": inventory_role,
         "objectId": str(inventory.id),
         "inventoryPositionId": str(inventory.id),
         "warehouseId": warehouse_id,
         "partId": part_id,
-        "previousQuantity": str(previous_quantity),
-        "newQuantity": str(new_quantity),
-        "transferQuantity": str(parameters.quantity),
-        "sourceWarehouse": parameters.source_warehouse_id,
-        "destinationWarehouse": parameters.destination_warehouse_id,
+        "quantity": str(quantity),
+        "requestedQuantity": str(parameters.quantity),
+        "fromWarehouseId": parameters.from_warehouse_id,
+        "toWarehouseId": parameters.to_warehouse_id,
+        "counterpartWarehouseId": counterpart_warehouse_id,
+        "counterpartQuantity": str(counterpart_quantity),
         "mitigationPlanId": parameters.mitigation_plan_id,
         "reason": parameters.reason,
-        "onHandQuantity": str(new_quantity),
         "reservedQuantity": str(inventory.reserved_quantity),
-        "availableQuantity": str(new_quantity - inventory.reserved_quantity),
+        "availableQuantity": str(quantity - inventory.reserved_quantity),
     }
 
 
 def _build_result_position(
-    inventory: Inventory,
+    *,
     warehouse_id: str,
-    part_id: str,
+    previous_quantity: Decimal,
+    new_quantity: Decimal,
 ) -> ReallocatedInventoryPosition:
     return ReallocatedInventoryPosition(
-        inventoryPositionId=str(inventory.id),
         warehouseId=warehouse_id,
-        partId=part_id,
-        onHandQuantity=inventory.on_hand_quantity,
-        reservedQuantity=inventory.reserved_quantity,
-        availableQuantity=inventory.on_hand_quantity - inventory.reserved_quantity,
+        previousQuantity=previous_quantity,
+        newQuantity=new_quantity,
     )
 
 

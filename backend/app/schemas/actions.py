@@ -86,14 +86,15 @@ class ApproveMitigationPlanResult(ApiBaseModel):
     approved_estimated_cost: Decimal | None = Field(alias="approvedEstimatedCost", default=None)
     warnings: list[str] = Field(default_factory=list)
 
+
 class ReallocateInventoryParameters(ApiBaseModel):
     """Stable public input for reallocateInventory."""
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     mitigation_plan_id: str = Field(alias="mitigationPlanId", min_length=1)
-    source_warehouse_id: str = Field(alias="sourceWarehouseId", min_length=1)
-    destination_warehouse_id: str = Field(alias="destinationWarehouseId", min_length=1)
+    from_warehouse_id: str = Field(alias="fromWarehouseId", min_length=1)
+    to_warehouse_id: str = Field(alias="toWarehouseId", min_length=1)
     part_id: str = Field(alias="partId", min_length=1)
     quantity: Decimal = Field(gt=0)
     reason: str = Field(min_length=1)
@@ -112,12 +113,9 @@ class ReallocatedInventoryPosition(ApiBaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    inventory_position_id: str = Field(alias="inventoryPositionId")
     warehouse_id: str = Field(alias="warehouseId")
-    part_id: str = Field(alias="partId")
-    on_hand_quantity: Decimal = Field(alias="onHandQuantity")
-    reserved_quantity: Decimal = Field(alias="reservedQuantity")
-    available_quantity: Decimal = Field(alias="availableQuantity")
+    previous_quantity: Decimal = Field(alias="previousQuantity")
+    new_quantity: Decimal = Field(alias="newQuantity")
 
 
 class ReallocateInventoryResult(ApiBaseModel):
@@ -127,9 +125,7 @@ class ReallocateInventoryResult(ApiBaseModel):
 
     mitigation_plan_id: str = Field(alias="mitigationPlanId")
     part_id: str = Field(alias="partId")
-    transfer_quantity: Decimal = Field(alias="transferQuantity")
-    source_warehouse_id: str = Field(alias="sourceWarehouseId")
-    destination_warehouse_id: str = Field(alias="destinationWarehouseId")
+    quantity: Decimal
     source_inventory: ReallocatedInventoryPosition = Field(alias="sourceInventory")
     destination_inventory: ReallocatedInventoryPosition = Field(alias="destinationInventory")
     warnings: list[str] = Field(default_factory=list)
