@@ -6,6 +6,8 @@ from app.functions.impacts import (
     find_impacted_orders,
     find_impacted_parts,
     find_impacted_products,
+    rank_impacted_orders,
+    recommend_mitigation_plan,
 )
 from app.functions.inventory import (
     calculate_stockout_risk,
@@ -19,6 +21,8 @@ from app.schemas.functions import (
     CalculateStockoutRiskResult,
     FindImpactedOrdersParameters,
     FindImpactedOrdersResult,
+    RankImpactedOrdersParameters,
+    RankImpactedOrdersResult,
     FindImpactedPartsParameters,
     FindImpactedPartsResult,
     FindAlternativeWarehousesParameters,
@@ -28,6 +32,8 @@ from app.schemas.functions import (
     FindImpactedProductsParameters,
     FindImpactedProductsResult,
     GetInventoryAvailabilityParameters,
+    RecommendMitigationPlanParameters,
+    RecommendMitigationPlanResult,
     InventoryAvailabilityResult,
 )
 
@@ -54,6 +60,12 @@ def build_function_handler_registry() -> FunctionHandlerRegistry:
                 output_model=FindImpactedOrdersResult,
                 execute=find_impacted_orders,
             ),
+            "rankImpactedOrders": RegisteredFunctionHandler(
+                handler_name="rankImpactedOrders",
+                input_model=RankImpactedOrdersParameters,
+                output_model=RankImpactedOrdersResult,
+                execute=rank_impacted_orders,
+            ),
             "calculateStockoutRisk": RegisteredFunctionHandler(
                 handler_name="calculateStockoutRisk",
                 input_model=CalculateStockoutRiskParameters,
@@ -77,6 +89,12 @@ def build_function_handler_registry() -> FunctionHandlerRegistry:
                 input_model=FindExpeditablePurchaseOrdersParameters,
                 output_model=FindExpeditablePurchaseOrdersResult,
                 execute=find_expeditable_purchase_orders,
+            ),
+            "recommendMitigationPlan": RegisteredFunctionHandler(
+                handler_name="recommendMitigationPlan",
+                input_model=RecommendMitigationPlanParameters,
+                output_model=RecommendMitigationPlanResult,
+                execute=recommend_mitigation_plan,
             ),
         }
     )

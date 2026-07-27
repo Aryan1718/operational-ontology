@@ -1,1 +1,1 @@
-"""Future ontology action handlers package."""
+"""Governed ontology action handlers."""

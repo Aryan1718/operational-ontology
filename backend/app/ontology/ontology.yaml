@@ -2314,6 +2314,84 @@ functions:
                 type: array
                 items:
                   type: string
+  rankImpactedOrders:
+    key: rankImpactedOrders
+    displayName: Rank Impacted Orders
+    description: Rank impacted customer orders for operational attention.
+    handler: rankImpactedOrders
+    readOnly: true
+    inputModel: RankImpactedOrdersParameters
+    outputModel: RankImpactedOrdersResult
+    parameters:
+      type: object
+      required:
+        - riskEventId
+      properties:
+        riskEventId:
+          type: string
+          minLength: 1
+    returns:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - rank
+              - orderId
+              - orderNumber
+              - riskScore
+              - scoreBreakdown
+              - shortageQuantity
+              - projectedDelayDays
+              - estimatedOrderValue
+              - recommendedAttention
+              - rankingExplanation
+            properties:
+              rank:
+                type: integer
+              orderId:
+                type: string
+              orderNumber:
+                type: string
+              riskScore:
+                type: integer
+              scoreBreakdown:
+                type: object
+                required:
+                  - orderPriority
+                  - deliveryUrgency
+                  - shortageRatio
+                  - projectedDelay
+                  - orderValue
+                  - partCriticality
+                properties:
+                  orderPriority:
+                    type: number
+                  deliveryUrgency:
+                    type: number
+                  shortageRatio:
+                    type: number
+                  projectedDelay:
+                    type: number
+                  orderValue:
+                    type: number
+                  partCriticality:
+                    type: number
+              shortageQuantity:
+                type: number
+              projectedDelayDays:
+                type: integer
+              estimatedOrderValue:
+                type: number
+              recommendedAttention:
+                type: string
+              rankingExplanation:
+                type: string
+
   calculateStockoutRisk:
     key: calculateStockoutRisk
     displayName: Calculate Stockout Risk
@@ -2589,3 +2667,77 @@ functions:
                   type: array
                   items:
                     type: string
+
+
+recommendMitigationPlan:
+  key: recommendMitigationPlan
+  displayName: Recommend Mitigation Plan
+  description: Recommend a read-only mitigation strategy for a risk event.
+  handler: recommendMitigationPlan
+  readOnly: true
+  inputModel: RecommendMitigationPlanParameters
+  outputModel: RecommendMitigationPlanResult
+  parameters:
+    type: object
+    required:
+      - riskEventId
+    properties:
+      riskEventId:
+        type: string
+        minLength: 1
+  returns:
+    type: object
+    required:
+      - riskEventId
+      - recommendedStrategy
+      - summary
+      - confidenceScore
+      - estimatedCost
+      - projectedOrdersRecovered
+      - projectedRevenueProtected
+      - remainingAtRiskOrderIds
+      - mitigationSteps
+      - alternativeStrategies
+      - assumptions
+      - warnings
+      - evidence
+      - explanation
+    properties:
+      riskEventId:
+        type: string
+      recommendedStrategy:
+        type: string
+      summary:
+        type: string
+      confidenceScore:
+        type: number
+      estimatedCost:
+        type: string
+      projectedOrdersRecovered:
+        type: integer
+      projectedRevenueProtected:
+        type: string
+      remainingAtRiskOrderIds:
+        type: array
+        items:
+          type: string
+      mitigationSteps:
+        type: array
+        items:
+          type: object
+      alternativeStrategies:
+        type: array
+        items:
+          type: object
+      assumptions:
+        type: array
+        items:
+          type: string
+      warnings:
+        type: array
+        items:
+          type: string
+      evidence:
+        type: object
+      explanation:
+        type: string

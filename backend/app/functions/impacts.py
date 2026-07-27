@@ -5,10 +5,16 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import InvalidOperation
 from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from uuid import UUID
 
+from sqlalchemy import select
+
+from app.models.supply_chain import CustomerOrder, Shipment
+
 from app.core.exceptions import ApplicationError
+from app.functions.config import DEFAULT_ONTOLOGY_FUNCTION_CONFIG
 from app.repositories.function_repository import (
     DemandProjectionRow,
     FunctionRepository,
@@ -27,9 +33,19 @@ from app.schemas.functions import (
     FindImpactedProductsParameters,
     FindImpactedProductsResult,
     ImpactedOrderEntry,
+    MitigationRecommendationEvidence,
+    MitigationStrategyAlternative,
     ImpactedOrderProductEntry,
     ImpactedPartEntry,
     ImpactedProductEntry,
+    RankImpactedOrdersParameters,
+    RankImpactedOrdersResult,
+    RecommendMitigationPlanParameters,
+    RecommendMitigationPlanResult,
+    RecommendedMitigationExpectedBenefit,
+    RecommendedMitigationStep,
+    RankedImpactedOrderEntry,
+    RankedOrderScoreBreakdown,
 )
 
 ZERO = Decimal("0.00")
@@ -38,6 +54,10 @@ SUPPLIER_DELAY_RISK_TYPE = "supplier_delay"
 CRITICALITY_RANK = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 ORDER_PRIORITY_RANK = {"low": 0, "normal": 1, "high": 2, "critical": 3}
 DESTINATION_WAREHOUSE_UNASSIGNED = "DESTINATION_WAREHOUSE_UNASSIGNED"
+ONE_HUNDRED = Decimal("100")
+ORDER_PRIORITY_SCORES = {"low": Decimal("25"), "normal": Decimal("50"), "high": Decimal("75"), "critical": Decimal("100")}
+PART_CRITICALITY_SCORES = {"low": Decimal("25"), "medium": Decimal("50"), "high": Decimal("75"), "critical": Decimal("100")}
+
 
 
 class RiskEventNotFoundError(ApplicationError):
@@ -434,6 +454,112 @@ def find_impacted_orders(
     return FindImpactedOrdersResult(items=items)
 
 
+def rank_impacted_orders(
+    context: FunctionExecutionContext,
+    parameters: RankImpactedOrdersParameters,
+) -> RankImpactedOrdersResult:
+    """Rank impacted orders returned by the existing impact analysis."""
+
+    impacted_orders = find_impacted_orders(
+        context,
+        FindImpactedOrdersParameters(riskEventId=parameters.risk_event_id),
+    )
+    if not impacted_orders.items:
+        return RankImpactedOrdersResult(items=[])
+
+    repository = FunctionRepository(context.session)
+    product_codes = {
+        impacted_product.product_id
+        for order in impacted_orders.items
+        for impacted_product in order.impacted_products
+    }
+    order_lines = repository.get_open_order_lines_for_products(product_codes)
+    order_date_by_code: dict[str, date] = {}
+    product_ids_by_code: dict[str, UUID] = {}
+    for line in order_lines:
+        current_order_date = order_date_by_code.get(line.order_code)
+        if current_order_date is None or line.order_date < current_order_date:
+            order_date_by_code[line.order_code] = line.order_date
+        product_ids_by_code.setdefault(line.product_code, line.product_id)
+
+    bom_rows = repository.get_active_product_bom_requirements(set(product_ids_by_code.values()))
+    criticality_by_product_code: dict[str, dict[str, str]] = defaultdict(dict)
+    for row in bom_rows:
+        criticality_by_product_code[row.product_code][row.part_code] = row.part_criticality
+
+    ranked_items: list[tuple[RankedImpactedOrderEntry, date]] = []
+    for order in impacted_orders.items:
+        warnings = set(order.warnings)
+        highest_part_criticality = None
+        for part_code in order.impacted_part_ids:
+            for product in order.impacted_products:
+                criticality = criticality_by_product_code.get(product.product_id, {}).get(part_code)
+                if criticality is None:
+                    continue
+                if highest_part_criticality is None or CRITICALITY_RANK.get(criticality, -1) > CRITICALITY_RANK.get(highest_part_criticality, -1):
+                    highest_part_criticality = criticality
+        if highest_part_criticality is None:
+            highest_part_criticality = "low"
+            warnings.add("PART_CRITICALITY_DEFAULTED")
+
+        breakdown = RankedOrderScoreBreakdown(
+            orderPriority=ORDER_PRIORITY_SCORES.get(order.priority, Decimal("50")),
+            deliveryUrgency=_calculate_delivery_urgency_score(context.executed_at.date(), order.required_delivery_date),
+            shortageRatio=_clamp(order.shortage_ratio * ONE_HUNDRED, ZERO, ONE_HUNDRED),
+            projectedDelay=_calculate_projected_delay_score(order.projected_delay_days),
+            orderValue=_calculate_order_value_score(order.estimated_order_value),
+            partCriticality=PART_CRITICALITY_SCORES.get(highest_part_criticality, Decimal("25")),
+        )
+        weights = DEFAULT_ONTOLOGY_FUNCTION_CONFIG.order_ranking_weights
+        weighted_total = (
+            breakdown.order_priority * weights.order_priority
+            + breakdown.delivery_urgency * weights.delivery_urgency
+            + breakdown.shortage_ratio * weights.shortage_ratio
+            + breakdown.projected_delay * weights.projected_delay
+            + breakdown.order_value * weights.order_value
+            + breakdown.part_criticality * weights.part_criticality
+        )
+        risk_score = int(_clamp(weighted_total, ZERO, ONE_HUNDRED).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        explanation = _build_ranking_explanation(
+            priority=order.priority,
+            recommended_attention=_map_recommended_attention(risk_score),
+            breakdown=breakdown,
+        )
+        ranked_items.append(
+            (
+                RankedImpactedOrderEntry(
+                    rank=0,
+                    orderId=order.order_id,
+                    orderNumber=order.order_number,
+                    riskScore=risk_score,
+                    scoreBreakdown=breakdown,
+                    shortageQuantity=order.shortage_quantity,
+                    projectedDelayDays=order.projected_delay_days,
+                    estimatedOrderValue=order.estimated_order_value,
+                    recommendedAttention=_map_recommended_attention(risk_score),
+                    rankingExplanation=explanation if not warnings else f"{explanation} Warnings: {', '.join(sorted(warnings))}.",
+                ),
+                order_date_by_code.get(order.order_id, date.max),
+            )
+        )
+
+    ranked_items.sort(
+        key=lambda item: (
+            -item[0].risk_score,
+            next(order.required_delivery_date for order in impacted_orders.items if order.order_id == item[0].order_id),
+            -item[0].shortage_quantity,
+            -item[0].estimated_order_value,
+            item[1],
+            item[0].order_id,
+        )
+    )
+
+    results: list[RankedImpactedOrderEntry] = []
+    for index, (item, _order_date) in enumerate(ranked_items, start=1):
+        results.append(item.model_copy(update={"rank": index}))
+    return RankImpactedOrdersResult(items=results)
+
+
 def _build_supplier_delay_impact_state(
     context: FunctionExecutionContext,
     risk_event_id: str,
@@ -723,6 +849,73 @@ def _allocate_product_quantity(
 
 
 
+def _calculate_delivery_urgency_score(executed_at_date: date, required_delivery_date: date) -> Decimal:
+    days_until_delivery = (required_delivery_date - executed_at_date).days
+    if days_until_delivery <= 0:
+        return Decimal("100")
+    if days_until_delivery <= 2:
+        return Decimal("90")
+    if days_until_delivery <= 5:
+        return Decimal("75")
+    if days_until_delivery <= 10:
+        return Decimal("50")
+    if days_until_delivery <= 20:
+        return Decimal("25")
+    return Decimal("10")
+
+
+def _calculate_projected_delay_score(projected_delay_days: int) -> Decimal:
+    maximum_days = DEFAULT_ONTOLOGY_FUNCTION_CONFIG.maximum_projected_delay_score_days
+    if maximum_days <= ZERO:
+        return ZERO
+    return _clamp((Decimal(projected_delay_days) / maximum_days) * ONE_HUNDRED, ZERO, ONE_HUNDRED)
+
+
+def _calculate_order_value_score(estimated_order_value: Decimal) -> Decimal:
+    if estimated_order_value < Decimal("5000"):
+        return Decimal("20")
+    if estimated_order_value < Decimal("20000"):
+        return Decimal("40")
+    if estimated_order_value < Decimal("50000"):
+        return Decimal("60")
+    if estimated_order_value < Decimal("100000"):
+        return Decimal("80")
+    return Decimal("100")
+
+
+def _map_recommended_attention(risk_score: int) -> str:
+    if risk_score <= 24:
+        return "monitor"
+    if risk_score <= 49:
+        return "review"
+    if risk_score <= 74:
+        return "urgent"
+    return "immediate"
+
+
+def _build_ranking_explanation(
+    *,
+    priority: str,
+    recommended_attention: str,
+    breakdown: RankedOrderScoreBreakdown,
+) -> str:
+    factors = [
+        ("order priority", breakdown.order_priority),
+        ("delivery urgency", breakdown.delivery_urgency),
+        ("shortage ratio", breakdown.shortage_ratio),
+        ("projected delay", breakdown.projected_delay),
+        ("order value", breakdown.order_value),
+        ("part criticality", breakdown.part_criticality),
+    ]
+    factors.sort(key=lambda item: (-item[1], item[0]))
+    strongest = ", ".join(name for name, _score in factors[:2])
+    return f"Recommended attention is {recommended_attention} because the strongest factors are {strongest} for a {priority} priority order."
+
+
+def _clamp(value: Decimal, minimum: Decimal, maximum: Decimal) -> Decimal:
+    return max(minimum, min(maximum, value))
+
+
 def _calculate_shortage_ratio(shortage_quantity: Decimal, required_quantity: Decimal) -> Decimal:
     if required_quantity <= ZERO:
         return ZERO
@@ -733,3 +926,425 @@ def _calculate_shortage_ratio(shortage_quantity: Decimal, required_quantity: Dec
 def _calculate_minimal_order_risk_score(shortage_ratio: Decimal) -> int:
     normalized_ratio = min(Decimal("1.00"), max(ZERO, shortage_ratio))
     return int((normalized_ratio * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+
+MONEY_QUANTUM = Decimal("0.01")
+CONFIDENCE_QUANTUM = Decimal("0.01")
+PLANNED_OR_READY_SHIPMENT_STATUSES = {"planned", "ready"}
+TRANSFER_STRATEGY_KEY = "reallocate_inventory"
+EXPEDITE_STRATEGY_KEY = "expedite_purchase_order"
+COMBINED_STRATEGY_KEY = "reallocate_inventory_plus_expedite_purchase_order"
+SHIPMENT_STRATEGY_KEY = "prioritize_shipment"
+NO_FEASIBLE_STRATEGY_KEY = "no_feasible_mitigation"
+
+
+@dataclass(frozen=True, slots=True)
+class ShipmentCandidate:
+    shipment_code: str
+    status: str
+    planned_ship_date: date | None
+    planned_delivery_date: date | None
+
+
+@dataclass(frozen=True, slots=True)
+class PartShortageRequirement:
+    order_id: str
+    order_number: str
+    part_id: str
+    destination_warehouse_id: str | None
+    required_by_date: date
+    shortage_quantity: Decimal
+    order_shortage_quantity: Decimal
+    estimated_order_value: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class StrategyBuildResult:
+    strategy_key: str
+    feasible: bool
+    estimated_cost: Decimal
+    mitigation_steps: list[RecommendedMitigationStep]
+    rejection_reasons: list[str]
+    recovered_quantities_by_order: dict[str, Decimal]
+    projected_revenue_protected: Decimal
+    projected_orders_recovered: int
+    remaining_at_risk_order_ids: list[str]
+    latest_recovery_date: date | None
+    operational_warnings: list[str]
+
+    @property
+    def total_recovered_quantity(self) -> Decimal:
+        return sum(self.recovered_quantities_by_order.values(), start=ZERO)
+
+
+
+def recommend_mitigation_plan(
+    context: FunctionExecutionContext,
+    parameters: RecommendMitigationPlanParameters,
+) -> RecommendMitigationPlanResult:
+    """Recommend a deterministic, read-only mitigation strategy for a risk event."""
+
+    from app.functions.inventory import (
+        find_alternative_warehouses,
+        find_expeditable_purchase_orders,
+    )
+    from app.schemas.functions import (
+        FindAlternativeWarehousesParameters,
+        FindExpeditablePurchaseOrdersParameters,
+    )
+
+    impact_state = _build_supplier_delay_impact_state(context, parameters.risk_event_id)
+    impacted_parts = find_impacted_parts(context, FindImpactedPartsParameters(riskEventId=parameters.risk_event_id))
+    impacted_products = find_impacted_products(context, FindImpactedProductsParameters(riskEventId=parameters.risk_event_id))
+    impacted_orders = find_impacted_orders(context, FindImpactedOrdersParameters(riskEventId=parameters.risk_event_id))
+    ranked_orders = rank_impacted_orders(context, RankImpactedOrdersParameters(riskEventId=parameters.risk_event_id))
+
+    ranked_order_ids = [item.order_id for item in ranked_orders.items]
+    impacted_order_map = {item.order_id: item for item in impacted_orders.items}
+    ordered_impacted_orders = [impacted_order_map[order_id] for order_id in ranked_order_ids if order_id in impacted_order_map]
+    assumptions = [
+        "Recommendation is read-only and does not create mitigation records.",
+        "Transfer timing and cost use the configured warehouse-region estimator.",
+        "Expedite timing and premium use the configured expedite estimator.",
+        "Shipment prioritization is never used to imply missing inventory exists.",
+    ]
+    if not ordered_impacted_orders:
+        return _build_no_feasible_recommendation(
+            risk_event_id=parameters.risk_event_id,
+            impacted_parts=impacted_parts,
+            impacted_products=impacted_products,
+            ranked_order_ids=ranked_order_ids,
+            warnings=[],
+            executed_at_date=context.executed_at.date(),
+            assumptions=assumptions,
+            explanation="No impacted orders were found for the current risk-event snapshot, so the function returned a read-only no-feasible-mitigation result.",
+        )
+
+    product_requirements = {product.product_id: product.required_quantities for product in impacted_products.items}
+    part_shortages = _build_part_shortage_requirements(ordered_impacted_orders, product_requirements)
+    shipments_by_order = _load_shipment_candidates(context, ranked_order_ids)
+    supplier_code = None
+
+    transfer_strategy = _build_transfer_strategy(context, part_shortages, find_alternative_warehouses, FindAlternativeWarehousesParameters, shipments_by_order)
+    expedite_strategy = _build_expedite_strategy(context, part_shortages, supplier_code, find_expeditable_purchase_orders, FindExpeditablePurchaseOrdersParameters, shipments_by_order)
+    combined_strategy = _build_combined_strategy(context, part_shortages, supplier_code, find_alternative_warehouses, FindAlternativeWarehousesParameters, find_expeditable_purchase_orders, FindExpeditablePurchaseOrdersParameters, shipments_by_order)
+    shipment_strategy = _build_prioritize_shipment_only_strategy(ordered_impacted_orders, shipments_by_order, context.executed_at.date())
+
+    candidate_strategies = [transfer_strategy, expedite_strategy, combined_strategy, shipment_strategy]
+    feasible_strategies = [strategy for strategy in candidate_strategies if strategy.feasible]
+    warnings = sorted({warning for strategy in candidate_strategies for warning in strategy.operational_warnings})
+    if not feasible_strategies:
+        combined_warnings = sorted(dict.fromkeys(warnings + [reason for strategy in candidate_strategies for reason in strategy.rejection_reasons]))
+        result = _build_no_feasible_recommendation(
+            risk_event_id=parameters.risk_event_id,
+            impacted_parts=impacted_parts,
+            impacted_products=impacted_products,
+            ranked_order_ids=ranked_order_ids,
+            warnings=combined_warnings,
+            executed_at_date=context.executed_at.date(),
+            assumptions=assumptions,
+            explanation="No candidate transfer, expedite, combination, or shipment-priority strategy met the feasibility rules for the current snapshot.",
+        )
+        return result.model_copy(update={"alternativeStrategies": [_to_alternative_strategy(strategy) for strategy in candidate_strategies]})
+
+    recommended = sorted(feasible_strategies, key=_strategy_sort_key)[0]
+    confidence_score = _calculate_confidence_score(ordered_impacted_orders, impacted_products, recommended)
+    summary = (
+        f"Recommended {recommended.strategy_key} to recover {recommended.projected_orders_recovered} fully recovered orders, "
+        f"protect {recommended.projected_revenue_protected.quantize(MONEY_QUANTUM)}, and recover "
+        f"{recommended.total_recovered_quantity.quantize(Decimal('0.01'))} units of impacted order quantity."
+    )
+    explanation = (
+        f"{recommended.strategy_key} was selected using the required deterministic order: fully recovered orders, projected revenue protected, recovered quantity, recovery date, estimated cost, mitigation-step count, and strategy key."
+    )
+    return RecommendMitigationPlanResult(
+        riskEventId=parameters.risk_event_id,
+        recommendedStrategy=recommended.strategy_key,
+        summary=summary,
+        confidenceScore=confidence_score,
+        estimatedCost=recommended.estimated_cost.quantize(MONEY_QUANTUM),
+        projectedOrdersRecovered=recommended.projected_orders_recovered,
+        projectedRevenueProtected=recommended.projected_revenue_protected.quantize(MONEY_QUANTUM),
+        remainingAtRiskOrderIds=recommended.remaining_at_risk_order_ids,
+        mitigationSteps=recommended.mitigation_steps,
+        alternativeStrategies=[_to_alternative_strategy(strategy) for strategy in candidate_strategies],
+        assumptions=assumptions,
+        warnings=warnings,
+        evidence=MitigationRecommendationEvidence(
+            impactedPartIds=[item.part_id for item in impacted_parts.items],
+            impactedProductIds=[item.product_id for item in impacted_products.items],
+            impactedOrderIds=[item.order_id for item in ordered_impacted_orders],
+            rankedOrderIds=ranked_order_ids,
+            snapshotExecutedAt=context.executed_at.date(),
+        ),
+        explanation=explanation,
+    )
+
+
+def _build_part_shortage_requirements(orders, product_requirements):
+    requirements = []
+    for order in orders:
+        shortages_by_part = defaultdict(lambda: ZERO)
+        for impacted_product in order.impacted_products:
+            quantity_map = product_requirements.get(impacted_product.product_id, {})
+            for part_id, quantity_required in quantity_map.items():
+                shortages_by_part[part_id] += impacted_product.shortage_quantity * quantity_required
+        for part_id, shortage_quantity in sorted(shortages_by_part.items()):
+            if shortage_quantity <= ZERO:
+                continue
+            requirements.append(PartShortageRequirement(order.order_id, order.order_number, part_id, order.destination_warehouse_id, order.required_delivery_date, shortage_quantity, order.shortage_quantity, order.estimated_order_value))
+    return requirements
+
+
+def _load_shipment_candidates(context, order_ids):
+    if not order_ids:
+        return {}
+    statement = select(CustomerOrder.order_code, Shipment.shipment_code, Shipment.status, Shipment.planned_ship_date, Shipment.planned_delivery_date).join(Shipment, Shipment.order_id == CustomerOrder.id).where(CustomerOrder.order_code.in_(order_ids)).order_by(CustomerOrder.order_code.asc(), Shipment.planned_delivery_date.asc(), Shipment.shipment_code.asc())
+    shipments = defaultdict(list)
+    for order_code, shipment_code, status, planned_ship_date, planned_delivery_date in context.session.execute(statement).all():
+        shipments[order_code].append(ShipmentCandidate(shipment_code, status, planned_ship_date, planned_delivery_date))
+    return dict(shipments)
+
+
+def _build_transfer_strategy(context, part_shortages, inventory_finder, inventory_parameters_model, shipments_by_order):
+    transfer_claims = {}
+    steps = []
+    reasons = []
+    recovered_by_order_parts = defaultdict(lambda: ZERO)
+    expected_dates = []
+    for requirement in part_shortages:
+        if requirement.destination_warehouse_id is None:
+            reasons.append(f"Order {requirement.order_id} has no destination warehouse for transfer planning.")
+            continue
+        result = inventory_finder(context, inventory_parameters_model(partId=requirement.part_id, destinationWarehouseId=requirement.destination_warehouse_id, requiredQuantity=requirement.shortage_quantity, requiredByDate=requirement.required_by_date))
+        remaining = requirement.shortage_quantity
+        for item in result.items:
+            available = item.transferable_quantity - transfer_claims.get((item.warehouse_id, requirement.part_id), ZERO)
+            if available <= ZERO:
+                continue
+            covered = min(remaining, available)
+            if covered <= ZERO:
+                continue
+            transfer_claims[(item.warehouse_id, requirement.part_id)] = transfer_claims.get((item.warehouse_id, requirement.part_id), ZERO) + covered
+            remaining -= covered
+            recovered_by_order_parts[(requirement.order_id, requirement.part_id)] += covered
+            expected_dates.append(item.estimated_arrival_date)
+            step_cost = (item.estimated_transfer_cost * (covered / item.covered_quantity) if item.covered_quantity > ZERO else item.estimated_transfer_cost).quantize(MONEY_QUANTUM)
+            steps.append(RecommendedMitigationStep(sequenceNumber=len(steps) + 1, stepType="reallocate_inventory", targetObjectType="Warehouse", targetObjectId=item.warehouse_id, parameters={"sourceWarehouseId": item.warehouse_id, "destinationWarehouseId": requirement.destination_warehouse_id, "partId": requirement.part_id, "quantity": covered}, estimatedCost=step_cost, expectedBenefit=RecommendedMitigationExpectedBenefit(quantityRecovered=covered, impactedOrderIds=[requirement.order_id], projectedRevenueProtected=_proportional_revenue(requirement.estimated_order_value, covered, requirement.shortage_quantity), expectedArrivalDate=item.estimated_arrival_date), evidence={"requiredByDate": requirement.required_by_date.isoformat(), "remainingShortageAfterStep": max(ZERO, remaining), "estimator": item.estimator.name}))
+            if remaining <= ZERO:
+                break
+        if remaining > ZERO:
+            reasons.append(f"Transfer inventory does not fully cover part {requirement.part_id} for order {requirement.order_id}.")
+    return _finalize_strategy(TRANSFER_STRATEGY_KEY, steps, reasons, part_shortages, recovered_by_order_parts, expected_dates, shipments_by_order)
+
+
+def _build_expedite_strategy(context, part_shortages, supplier_id, expedite_finder, expedite_parameters_model, shipments_by_order):
+    expedite_claims = {}
+    steps = []
+    reasons = []
+    recovered_by_order_parts = defaultdict(lambda: ZERO)
+    expected_dates = []
+    for requirement in part_shortages:
+        result = expedite_finder(context, expedite_parameters_model(partId=requirement.part_id, supplierId=supplier_id, requiredByDate=requirement.required_by_date))
+        remaining = requirement.shortage_quantity
+        for item in result.items:
+            if not item.feasible:
+                continue
+            available = item.open_quantity - expedite_claims.get(item.purchase_order_id, ZERO)
+            if available <= ZERO:
+                continue
+            covered = min(remaining, available)
+            if covered <= ZERO:
+                continue
+            expedite_claims[item.purchase_order_id] = expedite_claims.get(item.purchase_order_id, ZERO) + covered
+            remaining -= covered
+            recovered_by_order_parts[(requirement.order_id, requirement.part_id)] += covered
+            expected_dates.append(item.possible_expedited_date)
+            step_cost = (item.additional_cost * (covered / item.open_quantity) if item.open_quantity > ZERO else item.additional_cost).quantize(MONEY_QUANTUM)
+            steps.append(RecommendedMitigationStep(sequenceNumber=len(steps) + 1, stepType="expedite_purchase_order", targetObjectType="PurchaseOrder", targetObjectId=item.purchase_order_id, parameters={"purchaseOrderId": item.purchase_order_id, "partId": requirement.part_id, "quantity": covered, "targetExpectedDate": item.possible_expedited_date.isoformat()}, estimatedCost=step_cost, expectedBenefit=RecommendedMitigationExpectedBenefit(quantityRecovered=covered, impactedOrderIds=[requirement.order_id], projectedRevenueProtected=_proportional_revenue(requirement.estimated_order_value, covered, requirement.shortage_quantity), expectedArrivalDate=item.possible_expedited_date), evidence={"currentExpectedDate": item.current_expected_date.isoformat(), "daysSaved": item.days_saved, "estimator": item.estimator.name}))
+            if remaining <= ZERO:
+                break
+        if remaining > ZERO:
+            reasons.append(f"Expeditable purchase orders do not fully cover part {requirement.part_id} for order {requirement.order_id}.")
+    return _finalize_strategy(EXPEDITE_STRATEGY_KEY, steps, reasons, part_shortages, recovered_by_order_parts, expected_dates, shipments_by_order)
+
+
+def _build_combined_strategy(context, part_shortages, supplier_id, inventory_finder, inventory_parameters_model, expedite_finder, expedite_parameters_model, shipments_by_order):
+    transfer_claims = {}
+    expedite_claims = {}
+    steps = []
+    reasons = []
+    recovered_by_order_parts = defaultdict(lambda: ZERO)
+    expected_dates = []
+    for requirement in part_shortages:
+        remaining = requirement.shortage_quantity
+        if requirement.destination_warehouse_id is not None:
+            transfer_result = inventory_finder(context, inventory_parameters_model(partId=requirement.part_id, destinationWarehouseId=requirement.destination_warehouse_id, requiredQuantity=requirement.shortage_quantity, requiredByDate=requirement.required_by_date))
+            for item in transfer_result.items:
+                available = item.transferable_quantity - transfer_claims.get((item.warehouse_id, requirement.part_id), ZERO)
+                if available <= ZERO:
+                    continue
+                covered = min(remaining, available)
+                if covered <= ZERO:
+                    continue
+                transfer_claims[(item.warehouse_id, requirement.part_id)] = transfer_claims.get((item.warehouse_id, requirement.part_id), ZERO) + covered
+                remaining -= covered
+                recovered_by_order_parts[(requirement.order_id, requirement.part_id)] += covered
+                expected_dates.append(item.estimated_arrival_date)
+                step_cost = (item.estimated_transfer_cost * (covered / item.covered_quantity) if item.covered_quantity > ZERO else item.estimated_transfer_cost).quantize(MONEY_QUANTUM)
+                steps.append(RecommendedMitigationStep(sequenceNumber=len(steps) + 1, stepType="reallocate_inventory", targetObjectType="Warehouse", targetObjectId=item.warehouse_id, parameters={"sourceWarehouseId": item.warehouse_id, "destinationWarehouseId": requirement.destination_warehouse_id, "partId": requirement.part_id, "quantity": covered}, estimatedCost=step_cost, expectedBenefit=RecommendedMitigationExpectedBenefit(quantityRecovered=covered, impactedOrderIds=[requirement.order_id], projectedRevenueProtected=_proportional_revenue(requirement.estimated_order_value, covered, requirement.shortage_quantity), expectedArrivalDate=item.estimated_arrival_date), evidence={"combinedStrategy": True, "remainingShortageAfterStep": max(ZERO, remaining), "estimator": item.estimator.name}))
+                if remaining <= ZERO:
+                    break
+        if remaining > ZERO:
+            expedite_result = expedite_finder(context, expedite_parameters_model(partId=requirement.part_id, supplierId=supplier_id, requiredByDate=requirement.required_by_date))
+            for item in expedite_result.items:
+                if not item.feasible:
+                    continue
+                available = item.open_quantity - expedite_claims.get(item.purchase_order_id, ZERO)
+                if available <= ZERO:
+                    continue
+                covered = min(remaining, available)
+                if covered <= ZERO:
+                    continue
+                expedite_claims[item.purchase_order_id] = expedite_claims.get(item.purchase_order_id, ZERO) + covered
+                remaining -= covered
+                recovered_by_order_parts[(requirement.order_id, requirement.part_id)] += covered
+                expected_dates.append(item.possible_expedited_date)
+                step_cost = (item.additional_cost * (covered / item.open_quantity) if item.open_quantity > ZERO else item.additional_cost).quantize(MONEY_QUANTUM)
+                steps.append(RecommendedMitigationStep(sequenceNumber=len(steps) + 1, stepType="expedite_purchase_order", targetObjectType="PurchaseOrder", targetObjectId=item.purchase_order_id, parameters={"purchaseOrderId": item.purchase_order_id, "partId": requirement.part_id, "quantity": covered, "targetExpectedDate": item.possible_expedited_date.isoformat()}, estimatedCost=step_cost, expectedBenefit=RecommendedMitigationExpectedBenefit(quantityRecovered=covered, impactedOrderIds=[requirement.order_id], projectedRevenueProtected=_proportional_revenue(requirement.estimated_order_value, covered, requirement.shortage_quantity), expectedArrivalDate=item.possible_expedited_date), evidence={"combinedStrategy": True, "currentExpectedDate": item.current_expected_date.isoformat(), "daysSaved": item.days_saved, "estimator": item.estimator.name}))
+                if remaining <= ZERO:
+                    break
+        if remaining > ZERO:
+            reasons.append(f"Combined transfer and expedite steps still leave part {requirement.part_id} short for order {requirement.order_id}.")
+    return _finalize_strategy(COMBINED_STRATEGY_KEY, steps, reasons, part_shortages, recovered_by_order_parts, expected_dates, shipments_by_order)
+
+
+def _build_prioritize_shipment_only_strategy(orders, shipments_by_order, executed_at_date):
+    reasons = []
+    for order in orders:
+        if order.shortage_quantity > ZERO:
+            reasons.append(f"Order {order.order_id} still lacks inventory; shipment prioritization cannot fabricate supply.")
+            continue
+        shipment = _select_priority_shipment(shipments_by_order.get(order.order_id, []), [executed_at_date])
+        if shipment is None:
+            reasons.append(f"Order {order.order_id} has no planned or ready shipment with a measurable timing benefit.")
+            continue
+        step = RecommendedMitigationStep(sequenceNumber=1, stepType="prioritize_shipment", targetObjectType="Shipment", targetObjectId=shipment.shipment_code, parameters={"shipmentId": shipment.shipment_code}, estimatedCost=ZERO, expectedBenefit=RecommendedMitigationExpectedBenefit(quantityRecovered=order.shortage_quantity, impactedOrderIds=[order.order_id], projectedRevenueProtected=order.estimated_order_value, expectedArrivalDate=shipment.planned_delivery_date), evidence={"plannedShipDate": shipment.planned_ship_date.isoformat() if shipment.planned_ship_date else None, "plannedDeliveryDate": shipment.planned_delivery_date.isoformat() if shipment.planned_delivery_date else None})
+        return StrategyBuildResult(SHIPMENT_STRATEGY_KEY, True, ZERO, [step], [], {order.order_id: order.shortage_quantity}, order.estimated_order_value.quantize(MONEY_QUANTUM), 1, [candidate.order_id for candidate in orders if candidate.order_id != order.order_id], shipment.planned_delivery_date, [])
+    return StrategyBuildResult(SHIPMENT_STRATEGY_KEY, False, ZERO, [], sorted(dict.fromkeys(reasons)), {}, ZERO, 0, [order.order_id for order in orders], None, [])
+
+
+def _finalize_strategy(strategy_key, steps, reasons, part_shortages, recovered_by_order_parts, expected_dates, shipments_by_order):
+    requirements_by_order = defaultdict(list)
+    for requirement in part_shortages:
+        requirements_by_order[requirement.order_id].append(requirement)
+    recovered_quantities_by_order = {}
+    projected_revenue_protected = ZERO
+    projected_orders_recovered = 0
+    remaining_at_risk_order_ids = []
+    for order_id, requirements in requirements_by_order.items():
+        summary = _summarize_order_coverage(requirements, recovered_by_order_parts)
+        if summary.recovered_quantity > ZERO:
+            recovered_quantities_by_order[order_id] = summary.recovered_quantity
+            projected_revenue_protected += summary.projected_revenue_protected
+        if summary.fully_recovered:
+            projected_orders_recovered += 1
+        else:
+            remaining_at_risk_order_ids.append(order_id)
+    prioritized_steps = []
+    if steps:
+        next_sequence = len(steps) + 1
+        for order_id in sorted(recovered_quantities_by_order):
+            if order_id in remaining_at_risk_order_ids:
+                continue
+            shipment = _select_priority_shipment(shipments_by_order.get(order_id, []), expected_dates)
+            if shipment is None:
+                continue
+            prioritized_steps.append(RecommendedMitigationStep(sequenceNumber=next_sequence, stepType="prioritize_shipment", targetObjectType="Shipment", targetObjectId=shipment.shipment_code, parameters={"shipmentId": shipment.shipment_code}, estimatedCost=ZERO, expectedBenefit=RecommendedMitigationExpectedBenefit(quantityRecovered=recovered_quantities_by_order[order_id], impactedOrderIds=[order_id], projectedRevenueProtected=ZERO, expectedArrivalDate=shipment.planned_delivery_date), evidence={"shipmentStatus": shipment.status, "plannedShipDate": shipment.planned_ship_date.isoformat() if shipment.planned_ship_date else None, "plannedDeliveryDate": shipment.planned_delivery_date.isoformat() if shipment.planned_delivery_date else None}))
+            next_sequence += 1
+    finalized_steps = [step.model_copy(update={"sequenceNumber": index}) for index, step in enumerate(steps + prioritized_steps, start=1)]
+    estimated_cost = sum((step.estimated_cost for step in finalized_steps), start=ZERO).quantize(MONEY_QUANTUM)
+    latest_recovery_date = max(expected_dates) if expected_dates else None
+    return StrategyBuildResult(strategy_key, bool(finalized_steps) and bool(recovered_quantities_by_order), estimated_cost, finalized_steps, sorted(dict.fromkeys(reasons)), recovered_quantities_by_order, projected_revenue_protected.quantize(MONEY_QUANTUM), projected_orders_recovered, sorted(remaining_at_risk_order_ids), latest_recovery_date, [])
+
+
+@dataclass(frozen=True, slots=True)
+class OrderCoverageSummary:
+    recovered_quantity: Decimal
+    projected_revenue_protected: Decimal
+    fully_recovered: bool
+
+
+def _summarize_order_coverage(requirements, recovered_by_order_parts):
+    order_shortage_quantity = max((requirement.order_shortage_quantity for requirement in requirements), default=ZERO)
+    estimated_order_value = max((requirement.estimated_order_value for requirement in requirements), default=ZERO)
+    if order_shortage_quantity <= ZERO:
+        return OrderCoverageSummary(ZERO, ZERO, False)
+    coverage_ratios = []
+    for requirement in requirements:
+        if requirement.shortage_quantity <= ZERO:
+            continue
+        recovered = recovered_by_order_parts.get((requirement.order_id, requirement.part_id), ZERO)
+        coverage_ratios.append(_clamp(recovered / requirement.shortage_quantity, ZERO, Decimal("1.00")))
+    if not coverage_ratios:
+        return OrderCoverageSummary(ZERO, ZERO, False)
+    recovered_ratio = min(coverage_ratios)
+    recovered_quantity = (order_shortage_quantity * recovered_ratio).quantize(Decimal("0.01"))
+    projected_revenue_protected = _proportional_revenue(estimated_order_value, recovered_quantity, order_shortage_quantity)
+    return OrderCoverageSummary(recovered_quantity, projected_revenue_protected, recovered_ratio >= Decimal("1.00"))
+
+
+def _select_priority_shipment(shipments, expected_dates):
+    if not shipments or not expected_dates:
+        return None
+    earliest_supply_date = min(expected_dates)
+    eligible = [shipment for shipment in shipments if shipment.status in PLANNED_OR_READY_SHIPMENT_STATUSES and shipment.planned_ship_date is not None and shipment.planned_ship_date > earliest_supply_date]
+    if not eligible:
+        return None
+    eligible.sort(key=lambda item: (item.planned_ship_date or date.max, item.planned_delivery_date or date.max, item.shipment_code))
+    return eligible[0]
+
+
+def _calculate_confidence_score(ordered_impacted_orders, impacted_products, recommended_strategy):
+    destination_ratio = _safe_ratio(sum(1 for order in ordered_impacted_orders if order.destination_warehouse_id is not None), len(ordered_impacted_orders))
+    date_ratio = _safe_ratio(sum(1 for step in recommended_strategy.mitigation_steps if step.expected_benefit.expected_arrival_date is not None), len(recommended_strategy.mitigation_steps) or 1)
+    bom_ratio = _safe_ratio(sum(1 for product in impacted_products.items if product.required_quantities), len(impacted_products.items) or 1)
+    total_shortage = sum((order.shortage_quantity for order in ordered_impacted_orders), start=ZERO)
+    coverage_ratio = _decimal_ratio(recommended_strategy.total_recovered_quantity, total_shortage)
+    estimator_ratio = Decimal("0.80") if any(step.step_type in {TRANSFER_STRATEGY_KEY, EXPEDITE_STRATEGY_KEY} for step in recommended_strategy.mitigation_steps) else Decimal("1.00")
+    confidence = Decimal("0.20") + destination_ratio * Decimal("0.20") + date_ratio * Decimal("0.20") + bom_ratio * Decimal("0.15") + coverage_ratio * Decimal("0.15") + estimator_ratio * Decimal("0.10")
+    return _clamp(confidence, ZERO, Decimal("1.00")).quantize(CONFIDENCE_QUANTUM)
+
+
+def _build_no_feasible_recommendation(*, risk_event_id, impacted_parts, impacted_products, ranked_order_ids, warnings, executed_at_date, assumptions, explanation):
+    return RecommendMitigationPlanResult(riskEventId=risk_event_id, recommendedStrategy=NO_FEASIBLE_STRATEGY_KEY, summary="No feasible mitigation strategy could be recommended for the current operational snapshot.", confidenceScore=Decimal("0.40"), estimatedCost=ZERO, projectedOrdersRecovered=0, projectedRevenueProtected=ZERO, remainingAtRiskOrderIds=ranked_order_ids, mitigationSteps=[], alternativeStrategies=[], assumptions=assumptions, warnings=warnings, evidence=MitigationRecommendationEvidence(impactedPartIds=[item.part_id for item in impacted_parts.items], impactedProductIds=[item.product_id for item in impacted_products.items], impactedOrderIds=ranked_order_ids, rankedOrderIds=ranked_order_ids, snapshotExecutedAt=executed_at_date), explanation=explanation)
+
+
+def _to_alternative_strategy(strategy):
+    return MitigationStrategyAlternative(strategy=strategy.strategy_key, feasible=strategy.feasible, estimatedCost=strategy.estimated_cost.quantize(MONEY_QUANTUM), projectedOrdersRecovered=strategy.projected_orders_recovered, projectedRevenueProtected=strategy.projected_revenue_protected.quantize(MONEY_QUANTUM), rejectionReasons=strategy.rejection_reasons)
+
+
+def _strategy_sort_key(strategy):
+    return (-strategy.projected_orders_recovered, -strategy.projected_revenue_protected, -strategy.total_recovered_quantity, strategy.latest_recovery_date or date.max, strategy.estimated_cost, len(strategy.mitigation_steps), strategy.strategy_key)
+
+
+def _proportional_revenue(total_value, recovered_quantity, shortage_quantity):
+    if shortage_quantity <= ZERO:
+        return ZERO
+    return (total_value * _clamp(recovered_quantity / shortage_quantity, ZERO, Decimal("1.00"))).quantize(MONEY_QUANTUM)
+
+
+def _safe_ratio(numerator, denominator):
+    if denominator <= 0:
+        return Decimal("1.00")
+    return Decimal(numerator) / Decimal(denominator)
+
+
+def _decimal_ratio(numerator, denominator):
+    if denominator <= ZERO:
+        return Decimal("1.00")
+    try:
+        return _clamp(numerator / denominator, ZERO, Decimal("1.00"))
+    except InvalidOperation:
+        return ZERO
