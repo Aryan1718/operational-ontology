@@ -113,6 +113,7 @@ class ReallocatedInventoryPosition(ApiBaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
+    inventory_position_id: str = Field(alias="inventoryPositionId")
     warehouse_id: str = Field(alias="warehouseId")
     previous_quantity: Decimal = Field(alias="previousQuantity")
     new_quantity: Decimal = Field(alias="newQuantity")
@@ -125,7 +126,9 @@ class ReallocateInventoryResult(ApiBaseModel):
 
     mitigation_plan_id: str = Field(alias="mitigationPlanId")
     part_id: str = Field(alias="partId")
-    quantity: Decimal
+    transferred_quantity: Decimal = Field(alias="transferredQuantity")
     source_inventory: ReallocatedInventoryPosition = Field(alias="sourceInventory")
     destination_inventory: ReallocatedInventoryPosition = Field(alias="destinationInventory")
+    updated_source_quantity: Decimal = Field(alias="updatedSourceQuantity")
+    updated_destination_quantity: Decimal = Field(alias="updatedDestinationQuantity")
     warnings: list[str] = Field(default_factory=list)

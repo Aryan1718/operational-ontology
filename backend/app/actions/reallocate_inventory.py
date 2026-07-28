@@ -6,11 +6,10 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import case, select
-from sqlalchemy.orm import aliased
 
 from app.core.exceptions import ApplicationError, ObjectNotFoundError
 from app.models.audit_log import AuditLog
-from app.models.mitigation import MitigationPlan, MitigationPlanStep
+from app.models.mitigation import MitigationPlan
 from app.models.supply_chain import Inventory, Part, Warehouse
 from app.runtime.action_engine import ActionExecutionContext
 from app.schemas.actions import (
@@ -21,7 +20,6 @@ from app.schemas.actions import (
 
 ZERO = Decimal("0")
 EXECUTABLE_PLAN_STATUS = "approved"
-STEP_EXECUTION_STATUSES = frozenset({"pending", "approved", "executing"})
 
 
 class MitigationPlanNotApprovedError(ApplicationError):
@@ -111,11 +109,17 @@ def reallocate_inventory(
     if plan.status != EXECUTABLE_PLAN_STATUS:
         raise MitigationPlanNotApprovedError(parameters.mitigation_plan_id, plan.status)
 
-    _require_part_exists(context, parameters.part_id)
-    _require_warehouse_exists(context, parameters.from_warehouse_id)
-    _require_warehouse_exists(context, parameters.to_warehouse_id)
+    part = _load_part(context, parameters.part_id)
+    source_warehouse = _load_warehouse(context, parameters.from_warehouse_id)
+    destination_warehouse = _load_warehouse(context, parameters.to_warehouse_id)
 
-    source_inventory, destination_inventory = _load_inventory_pair_for_update(context, parameters)
+    source_inventory, destination_inventory = _load_inventory_pair_for_update(
+        context=context,
+        part=part,
+        source_warehouse=source_warehouse,
+        destination_warehouse=destination_warehouse,
+        parameters=parameters,
+    )
     _validate_inventory_pair(source_inventory, destination_inventory, parameters)
 
     previous_source_quantity = source_inventory.on_hand_quantity
@@ -131,11 +135,6 @@ def reallocate_inventory(
     source_inventory.on_hand_quantity = previous_source_quantity - parameters.quantity
     destination_inventory.on_hand_quantity = previous_destination_quantity + parameters.quantity
 
-    _mark_matching_reallocation_step_executed(
-        context=context,
-        mitigation_plan_db_id=plan.id,
-        parameters=parameters,
-    )
     context.session.flush()
 
     _record_inventory_audit(
@@ -149,6 +148,7 @@ def reallocate_inventory(
         counterpart_warehouse_id=parameters.to_warehouse_id,
         counterpart_previous_quantity=previous_destination_quantity,
         counterpart_new_quantity=destination_inventory.on_hand_quantity,
+        mitigation_plan_id=plan.mitigation_code,
         parameters=parameters,
     )
     _record_inventory_audit(
@@ -162,23 +162,28 @@ def reallocate_inventory(
         counterpart_warehouse_id=parameters.from_warehouse_id,
         counterpart_previous_quantity=previous_source_quantity,
         counterpart_new_quantity=source_inventory.on_hand_quantity,
+        mitigation_plan_id=plan.mitigation_code,
         parameters=parameters,
     )
 
     return ReallocateInventoryResult(
-        mitigationPlanId=parameters.mitigation_plan_id,
+        mitigationPlanId=plan.mitigation_code,
         partId=parameters.part_id,
-        quantity=parameters.quantity,
+        transferredQuantity=parameters.quantity,
         sourceInventory=_build_result_position(
+            inventory=source_inventory,
             warehouse_id=parameters.from_warehouse_id,
             previous_quantity=previous_source_quantity,
             new_quantity=source_inventory.on_hand_quantity,
         ),
         destinationInventory=_build_result_position(
+            inventory=destination_inventory,
             warehouse_id=parameters.to_warehouse_id,
             previous_quantity=previous_destination_quantity,
             new_quantity=destination_inventory.on_hand_quantity,
         ),
+        updatedSourceQuantity=source_inventory.on_hand_quantity,
+        updatedDestinationQuantity=destination_inventory.on_hand_quantity,
         warnings=[],
     )
 
@@ -198,51 +203,58 @@ def _load_mitigation_plan_for_update(
     return plan
 
 
-def _require_part_exists(context: ActionExecutionContext, part_id: str) -> None:
-    statement = select(Part.id).where(Part.part_code == part_id)
-    resolved = context.session.execute(statement).scalar_one_or_none()
-    if resolved is None:
+def _load_part(
+    context: ActionExecutionContext,
+    part_id: str,
+) -> Part:
+    statement = select(Part).where(Part.part_code == part_id)
+    part = context.session.execute(statement).scalar_one_or_none()
+    if part is None:
         raise ObjectNotFoundError("Part", part_id)
+    return part
 
 
-def _require_warehouse_exists(
+def _load_warehouse(
     context: ActionExecutionContext,
     warehouse_id: str,
-) -> None:
-    statement = select(Warehouse.id).where(Warehouse.warehouse_code == warehouse_id)
-    resolved = context.session.execute(statement).scalar_one_or_none()
-    if resolved is None:
+) -> Warehouse:
+    statement = select(Warehouse).where(Warehouse.warehouse_code == warehouse_id)
+    warehouse = context.session.execute(statement).scalar_one_or_none()
+    if warehouse is None:
         raise ObjectNotFoundError("Warehouse", warehouse_id)
+    return warehouse
 
 
 def _load_inventory_pair_for_update(
     context: ActionExecutionContext,
+    *,
+    part: Part,
+    source_warehouse: Warehouse,
+    destination_warehouse: Warehouse,
     parameters: ReallocateInventoryParameters,
 ) -> tuple[Inventory, Inventory]:
     ordering = case(
-        (Warehouse.warehouse_code == parameters.from_warehouse_id, 0),
-        (Warehouse.warehouse_code == parameters.to_warehouse_id, 1),
+        (Inventory.warehouse_id == source_warehouse.id, 0),
+        (Inventory.warehouse_id == destination_warehouse.id, 1),
         else_=2,
     )
     statement = (
-        select(Inventory, Warehouse.warehouse_code)
-        .join(Warehouse, Warehouse.id == Inventory.warehouse_id)
-        .join(Part, Part.id == Inventory.part_id)
+        select(Inventory)
         .where(
             Inventory.item_type == "part",
-            Warehouse.warehouse_code.in_((parameters.from_warehouse_id, parameters.to_warehouse_id)),
-            Part.part_code == parameters.part_id,
+            Inventory.warehouse_id.in_((source_warehouse.id, destination_warehouse.id)),
+            Inventory.part_id == part.id,
         )
-        .order_by(ordering, Warehouse.warehouse_code.asc(), Inventory.id.asc())
+        .order_by(ordering, Inventory.id.asc())
         .with_for_update()
     )
 
     source_inventory = None
     destination_inventory = None
-    for inventory, warehouse_code in context.session.execute(statement).all():
-        if warehouse_code == parameters.from_warehouse_id:
+    for inventory in context.session.execute(statement).scalars():
+        if inventory.warehouse_id == source_warehouse.id:
             source_inventory = inventory
-        elif warehouse_code == parameters.to_warehouse_id:
+        elif inventory.warehouse_id == destination_warehouse.id:
             destination_inventory = inventory
 
     if source_inventory is None:
@@ -273,50 +285,11 @@ def _validate_inventory_pair(
         raise InventoryItemMismatchError(parameters.part_id)
 
 
-
 def _calculate_transferable_quantity(inventory: Inventory) -> Decimal:
     return max(
         ZERO,
         inventory.on_hand_quantity - inventory.reserved_quantity - inventory.safety_stock_quantity,
     )
-
-
-def _mark_matching_reallocation_step_executed(
-    *,
-    context: ActionExecutionContext,
-    mitigation_plan_db_id: UUID,
-    parameters: ReallocateInventoryParameters,
-) -> None:
-    source_warehouse = aliased(Warehouse)
-    destination_warehouse = aliased(Warehouse)
-    statement = (
-        select(MitigationPlanStep)
-        .join(
-            source_warehouse,
-            source_warehouse.id == MitigationPlanStep.source_warehouse_id,
-        )
-        .join(
-            destination_warehouse,
-            destination_warehouse.id == MitigationPlanStep.target_warehouse_id,
-        )
-        .join(Part, Part.id == MitigationPlanStep.part_id)
-        .where(
-            MitigationPlanStep.mitigation_plan_id == mitigation_plan_db_id,
-            MitigationPlanStep.action_type == "reallocate_inventory",
-            MitigationPlanStep.status.in_(tuple(STEP_EXECUTION_STATUSES)),
-            source_warehouse.warehouse_code == parameters.from_warehouse_id,
-            destination_warehouse.warehouse_code == parameters.to_warehouse_id,
-            Part.part_code == parameters.part_id,
-            MitigationPlanStep.quantity == parameters.quantity,
-        )
-        .order_by(MitigationPlanStep.step_order.asc(), MitigationPlanStep.id.asc())
-        .with_for_update()
-    )
-    step = context.session.execute(statement).scalars().first()
-    if step is None:
-        return
-    step.status = "executed"
-    step.executed_at = context.executed_at
 
 
 def _record_inventory_audit(
@@ -331,6 +304,7 @@ def _record_inventory_audit(
     counterpart_warehouse_id: str,
     counterpart_previous_quantity: Decimal,
     counterpart_new_quantity: Decimal,
+    mitigation_plan_id: str,
     parameters: ReallocateInventoryParameters,
 ) -> None:
     context.session.add(
@@ -348,6 +322,7 @@ def _record_inventory_audit(
                 quantity=previous_quantity,
                 counterpart_warehouse_id=counterpart_warehouse_id,
                 counterpart_quantity=counterpart_previous_quantity,
+                mitigation_plan_id=mitigation_plan_id,
                 parameters=parameters,
             ),
             new_value=_build_audit_state(
@@ -359,6 +334,7 @@ def _record_inventory_audit(
                 quantity=new_quantity,
                 counterpart_warehouse_id=counterpart_warehouse_id,
                 counterpart_quantity=counterpart_new_quantity,
+                mitigation_plan_id=mitigation_plan_id,
                 parameters=parameters,
             ),
             reason=parameters.reason,
@@ -377,6 +353,7 @@ def _build_audit_state(
     quantity: Decimal,
     counterpart_warehouse_id: str,
     counterpart_quantity: Decimal,
+    mitigation_plan_id: str,
     parameters: ReallocateInventoryParameters,
 ) -> dict[str, object]:
     return {
@@ -394,7 +371,7 @@ def _build_audit_state(
         "toWarehouseId": parameters.to_warehouse_id,
         "counterpartWarehouseId": counterpart_warehouse_id,
         "counterpartQuantity": str(counterpart_quantity),
-        "mitigationPlanId": parameters.mitigation_plan_id,
+        "mitigationPlanId": mitigation_plan_id,
         "reason": parameters.reason,
         "reservedQuantity": str(inventory.reserved_quantity),
         "availableQuantity": str(quantity - inventory.reserved_quantity),
@@ -403,11 +380,13 @@ def _build_audit_state(
 
 def _build_result_position(
     *,
+    inventory: Inventory,
     warehouse_id: str,
     previous_quantity: Decimal,
     new_quantity: Decimal,
 ) -> ReallocatedInventoryPosition:
     return ReallocatedInventoryPosition(
+        inventoryPositionId=str(inventory.id),
         warehouseId=warehouse_id,
         previousQuantity=previous_quantity,
         newQuantity=new_quantity,
