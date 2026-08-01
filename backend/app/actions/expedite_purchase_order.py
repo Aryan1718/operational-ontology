@@ -17,7 +17,7 @@ from app.runtime.action_engine import ActionExecutionContext
 from app.schemas.actions import ExpeditePurchaseOrderParameters, ExpeditePurchaseOrderResult
 
 ZERO = Decimal("0.00")
-CHILD_INVOCATION_MODE = "child_action"
+CHILD_INVOCATION_MODE = "child"
 REQUIRED_PARENT_ACTION = "executeMitigationPlan"
 EXECUTING_PLAN_STATUS = "executing"
 PENDING_STEP_STATUS = "pending"

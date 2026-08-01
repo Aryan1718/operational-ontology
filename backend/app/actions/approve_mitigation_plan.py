@@ -1,14 +1,15 @@
-"""Approve persisted mitigation plans without executing operational changes."""
+"""Approve persisted mitigation plans and execute supported trusted child actions."""
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from sqlalchemy import select
 
 from app.core.exceptions import ApplicationError, ObjectNotFoundError
 from app.models.audit_log import AuditLog
-from app.models.mitigation import MitigationPlan
+from app.models.mitigation import MitigationPlan, MitigationPlanStep
 from app.runtime.action_engine import ActionExecutionContext
 from app.schemas.actions import (
     ApproveMitigationPlanParameters,
@@ -17,9 +18,10 @@ from app.schemas.actions import (
 
 AWAITING_APPROVAL_STATUSES = frozenset({"draft", "proposed"})
 APPROVED_STATUS = "approved"
-TERMINAL_OR_INELIGIBLE_STATUSES = frozenset(
-    {"approved", "rejected", "cancelled", "executing", "executed"}
-)
+REALLOCATE_STEP_TYPE = "reallocate_inventory"
+REALLOCATE_ACTION_NAME = "reallocateInventory"
+EXECUTED_STEP_STATUS = "executed"
+STEP_NOTES_PARAMETERS_KEY = "parameters"
 
 
 class InvalidMitigationPlanApprovalStateError(ApplicationError):
@@ -57,7 +59,21 @@ def approve_mitigation_plan(
     plan.approved_by = actor_user_id
     plan.approved_at = context.executed_at
 
+    reallocation_step = _load_reallocate_step_for_update(context, plan.id)
+
     context.session.flush()
+
+    if _is_reallocate_recommendation(plan, reallocation_step):
+        child_parameters = _build_reallocate_child_parameters(
+            plan=plan,
+            step=reallocation_step,
+            approval_reason=parameters.reason,
+        )
+        context.execute_child_action(REALLOCATE_ACTION_NAME, child_parameters)
+        if reallocation_step is not None:
+            reallocation_step.status = EXECUTED_STEP_STATUS
+            reallocation_step.executed_at = context.executed_at
+            context.session.flush()
 
     _record_plan_audit(
         context=context,
@@ -74,6 +90,66 @@ def approve_mitigation_plan(
         approvedAt=plan.approved_at,
         approvedEstimatedCost=plan.estimated_cost,
     )
+
+
+def _load_reallocate_step_for_update(
+    context: ActionExecutionContext,
+    mitigation_plan_db_id,
+) -> MitigationPlanStep | None:
+    statement = (
+        select(MitigationPlanStep)
+        .where(
+            MitigationPlanStep.mitigation_plan_id == mitigation_plan_db_id,
+            MitigationPlanStep.action_type == REALLOCATE_STEP_TYPE,
+        )
+        .order_by(MitigationPlanStep.step_order.asc(), MitigationPlanStep.id.asc())
+        .with_for_update()
+    )
+    return context.session.execute(statement).scalars().first()
+
+
+def _is_reallocate_recommendation(
+    plan: MitigationPlan,
+    step: MitigationPlanStep | None,
+) -> bool:
+    return plan.plan_type == REALLOCATE_STEP_TYPE or (
+        step is not None and step.action_type == REALLOCATE_STEP_TYPE
+    )
+
+
+def _build_reallocate_child_parameters(
+    *,
+    plan: MitigationPlan,
+    step: MitigationPlanStep | None,
+    approval_reason: str,
+) -> dict[str, object]:
+    raw_parameters: dict[str, object] = {
+        "mitigationPlanId": plan.mitigation_code,
+        "reason": approval_reason,
+    }
+    if step is None or step.notes is None:
+        return raw_parameters
+    try:
+        payload = json.loads(step.notes)
+    except json.JSONDecodeError:
+        return raw_parameters
+    if not isinstance(payload, dict):
+        return raw_parameters
+    frozen_parameters = payload.get(STEP_NOTES_PARAMETERS_KEY)
+    if not isinstance(frozen_parameters, dict):
+        return raw_parameters
+
+    field_mapping = {
+        "sourceWarehouseId": "fromWarehouseId",
+        "destinationWarehouseId": "toWarehouseId",
+        "partId": "partId",
+        "quantity": "quantity",
+    }
+    for source_field, target_field in field_mapping.items():
+        value = frozen_parameters.get(source_field)
+        if value is not None:
+            raw_parameters[target_field] = value
+    return raw_parameters
 
 
 def _load_mitigation_plan_for_update(

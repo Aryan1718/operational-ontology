@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -40,9 +41,11 @@ class ActionExecutionContext:
     request_id: str
     executed_at: datetime
     function_handler_registry: FunctionHandlerRegistry
-    invocation_mode: Literal["external", "child_action"]
+    execution_id: str
+    invocation_mode: Literal["external", "child"]
     parent_action_name: str | None
     parent_execution_id: str | None
+    execute_child_action: Callable[[str, dict[str, Any]], "ExecutedAction"]
 
 
 class ActionNotFoundError(ApplicationError):
@@ -167,15 +170,17 @@ class ActionEngine:
         request_id: str | None = None,
         parent_action_name: str,
         parent_execution_id: str,
+        executed_at: datetime | None = None,
     ) -> ExecutedAction:
         return self._execute(
             actor=actor,
             action_name=action_name,
             raw_parameters=raw_parameters,
             request_id=request_id or str(uuid4()),
-            invocation_mode="child_action",
+            invocation_mode="child",
             parent_action_name=parent_action_name,
             parent_execution_id=parent_execution_id,
+            executed_at=executed_at,
         )
 
     def _execute(
@@ -185,9 +190,10 @@ class ActionEngine:
         action_name: str,
         raw_parameters: dict[str, Any],
         request_id: str,
-        invocation_mode: Literal["external", "child_action"],
+        invocation_mode: Literal["external", "child"],
         parent_action_name: str | None,
         parent_execution_id: str | None,
+        executed_at: datetime | None = None,
     ) -> ExecutedAction:
         self._validate_invocation_context(
             invocation_mode=invocation_mode,
@@ -222,16 +228,28 @@ class ActionEngine:
             input_model=registered_handler.input_model,
             raw_parameters=raw_parameters,
         )
+        execution_id = request_id
+        resolved_executed_at = executed_at or datetime.now(UTC)
         context = ActionExecutionContext(
             session=self._session,
             registry=self._registry,
             actor=actor,
             request_id=request_id,
-            executed_at=datetime.now(UTC),
+            executed_at=resolved_executed_at,
             function_handler_registry=self._function_handler_registry,
+            execution_id=execution_id,
             invocation_mode=invocation_mode,
             parent_action_name=parent_action_name,
             parent_execution_id=parent_execution_id,
+            execute_child_action=lambda child_action_name, child_raw_parameters: self.execute_child_action(
+                actor=actor,
+                action_name=child_action_name,
+                raw_parameters=child_raw_parameters,
+                request_id=request_id,
+                parent_action_name=action_name,
+                parent_execution_id=execution_id,
+                executed_at=resolved_executed_at,
+            ),
         )
         try:
             if self._session.in_transaction():
@@ -260,7 +278,7 @@ class ActionEngine:
     @staticmethod
     def _validate_invocation_context(
         *,
-        invocation_mode: Literal["external", "child_action"],
+        invocation_mode: Literal["external", "child"],
         parent_action_name: str | None,
         parent_execution_id: str | None,
     ) -> None:
@@ -283,7 +301,7 @@ class ActionEngine:
     @staticmethod
     def _build_trusted_authorization_context(
         *,
-        invocation_mode: Literal["external", "child_action"],
+        invocation_mode: Literal["external", "child"],
         parent_action_name: str | None,
         parent_execution_id: str | None,
     ) -> TrustedAuthorizationContext | None:
