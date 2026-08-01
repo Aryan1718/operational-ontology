@@ -449,6 +449,10 @@ class PurchaseOrder(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     order_date: Mapped[date] = mapped_column(Date, nullable=False)
     expected_delivery_date: Mapped[date | None] = mapped_column(Date)
     actual_delivery_date: Mapped[date | None] = mapped_column(Date)
+    expedited: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    expedite_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
 
     supplier: Mapped[Supplier] = relationship(back_populates="purchase_orders")
     items: Mapped[list["PurchaseOrderItem"]] = relationship(
