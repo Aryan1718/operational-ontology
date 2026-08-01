@@ -46,6 +46,7 @@ KNOWN_ACTION_HANDLERS = {
     "generateMitigationPlan",
     "approveMitigationPlan",
     "reallocateInventory",
+    "expeditePurchaseOrder",
 }
 
 

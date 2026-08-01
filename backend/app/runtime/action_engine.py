@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from sqlalchemy.orm import Session
@@ -22,6 +23,7 @@ from app.ontology.actor_context import (
     AuthorizationRequest,
     AuthorizationResource,
     AuthorizationResourceType,
+    TrustedAuthorizationContext,
 )
 from app.ontology.registry import OntologyRegistry
 from app.runtime.authorization_service import AuthorizationService
@@ -38,6 +40,9 @@ class ActionExecutionContext:
     request_id: str
     executed_at: datetime
     function_handler_registry: FunctionHandlerRegistry
+    invocation_mode: Literal["external", "child_action"]
+    parent_action_name: str | None
+    parent_execution_id: str | None
 
 
 class ActionNotFoundError(ApplicationError):
@@ -88,6 +93,28 @@ class ActionExecutionFailedError(ApplicationError):
         )
 
 
+class InvalidActionInvocationContextError(ApplicationError):
+    """Raised when trusted runtime invocation metadata is inconsistent."""
+
+    def __init__(
+        self,
+        *,
+        invocation_mode: str,
+        parent_action_name: str | None,
+        parent_execution_id: str | None,
+    ) -> None:
+        super().__init__(
+            code="INVALID_ACTION_INVOCATION_CONTEXT",
+            message="The action invocation context is invalid.",
+            status_code=500,
+            details={
+                "invocationMode": invocation_mode,
+                "parentActionName": parent_action_name,
+                "parentExecutionId": parent_execution_id,
+            },
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutedAction:
     """Engine result returned to the route layer."""
@@ -121,9 +148,60 @@ class ActionEngine:
         raw_parameters: dict[str, Any],
         request_id: str,
     ) -> ExecutedAction:
+        return self._execute(
+            actor=actor,
+            action_name=action_name,
+            raw_parameters=raw_parameters,
+            request_id=request_id,
+            invocation_mode="external",
+            parent_action_name=None,
+            parent_execution_id=None,
+        )
+
+    def execute_child_action(
+        self,
+        *,
+        actor: ActorContext,
+        action_name: str,
+        raw_parameters: dict[str, Any],
+        request_id: str | None = None,
+        parent_action_name: str,
+        parent_execution_id: str,
+    ) -> ExecutedAction:
+        return self._execute(
+            actor=actor,
+            action_name=action_name,
+            raw_parameters=raw_parameters,
+            request_id=request_id or str(uuid4()),
+            invocation_mode="child_action",
+            parent_action_name=parent_action_name,
+            parent_execution_id=parent_execution_id,
+        )
+
+    def _execute(
+        self,
+        *,
+        actor: ActorContext,
+        action_name: str,
+        raw_parameters: dict[str, Any],
+        request_id: str,
+        invocation_mode: Literal["external", "child_action"],
+        parent_action_name: str | None,
+        parent_execution_id: str | None,
+    ) -> ExecutedAction:
+        self._validate_invocation_context(
+            invocation_mode=invocation_mode,
+            parent_action_name=parent_action_name,
+            parent_execution_id=parent_execution_id,
+        )
         definition = self._registry.get_action_type(action_name)
         if definition is None:
             raise ActionNotFoundError(action_name)
+        trusted_context = self._build_trusted_authorization_context(
+            invocation_mode=invocation_mode,
+            parent_action_name=parent_action_name,
+            parent_execution_id=parent_execution_id,
+        )
         self._authorization_service.authorize_or_raise(
             AuthorizationRequest(
                 actor=actor,
@@ -132,6 +210,7 @@ class ActionEngine:
                     resource_type=AuthorizationResourceType.ACTION,
                     resource_key=action_name,
                 ),
+                trusted_context=trusted_context,
             )
         )
         registered_handler = self._require_registered_handler(
@@ -150,10 +229,16 @@ class ActionEngine:
             request_id=request_id,
             executed_at=datetime.now(UTC),
             function_handler_registry=self._function_handler_registry,
+            invocation_mode=invocation_mode,
+            parent_action_name=parent_action_name,
+            parent_execution_id=parent_execution_id,
         )
         try:
-            with self._session.begin():
+            if self._session.in_transaction():
                 raw_result = registered_handler.execute(context, parameters)
+            else:
+                with self._session.begin():
+                    raw_result = registered_handler.execute(context, parameters)
         except ApplicationError:
             raise
         except Exception as exc:
@@ -170,6 +255,44 @@ class ActionEngine:
                 result=result,
                 warnings=getattr(result, "warnings", []),
             )
+        )
+
+    @staticmethod
+    def _validate_invocation_context(
+        *,
+        invocation_mode: Literal["external", "child_action"],
+        parent_action_name: str | None,
+        parent_execution_id: str | None,
+    ) -> None:
+        if invocation_mode == "external":
+            if parent_action_name is not None or parent_execution_id is not None:
+                raise InvalidActionInvocationContextError(
+                    invocation_mode=invocation_mode,
+                    parent_action_name=parent_action_name,
+                    parent_execution_id=parent_execution_id,
+                )
+            return
+        if parent_action_name and parent_execution_id:
+            return
+        raise InvalidActionInvocationContextError(
+            invocation_mode=invocation_mode,
+            parent_action_name=parent_action_name,
+            parent_execution_id=parent_execution_id,
+        )
+
+    @staticmethod
+    def _build_trusted_authorization_context(
+        *,
+        invocation_mode: Literal["external", "child_action"],
+        parent_action_name: str | None,
+        parent_execution_id: str | None,
+    ) -> TrustedAuthorizationContext | None:
+        if invocation_mode == "external":
+            return None
+        return TrustedAuthorizationContext(
+            internal_dispatch=True,
+            parent_action_key=parent_action_name,
+            parent_execution_id=parent_execution_id,
         )
 
     def _require_registered_handler(

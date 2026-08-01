@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from app.actions.approve_mitigation_plan import approve_mitigation_plan
+from app.actions.expedite_purchase_order import expedite_purchase_order
 from app.actions.generate_mitigation_plan import generate_mitigation_plan
 from app.actions.reallocate_inventory import reallocate_inventory
 from app.actions.registry import ActionHandlerRegistry, RegisteredActionHandler
 from app.schemas.actions import (
     ApproveMitigationPlanParameters,
     ApproveMitigationPlanResult,
+    ExpeditePurchaseOrderParameters,
+    ExpeditePurchaseOrderResult,
     GenerateMitigationPlanParameters,
     GenerateMitigationPlanResult,
     ReallocateInventoryParameters,
@@ -37,6 +40,12 @@ def build_action_handler_registry() -> ActionHandlerRegistry:
                 input_model=ReallocateInventoryParameters,
                 output_model=ReallocateInventoryResult,
                 execute=reallocate_inventory,
+            ),
+            "expeditePurchaseOrder": RegisteredActionHandler(
+                handler_name="expeditePurchaseOrder",
+                input_model=ExpeditePurchaseOrderParameters,
+                output_model=ExpeditePurchaseOrderResult,
+                execute=expedite_purchase_order,
             ),
         }
     )
