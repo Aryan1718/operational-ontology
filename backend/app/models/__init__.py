@@ -1,5 +1,6 @@
 """Operational SQLAlchemy models."""
 
+from app.models.action_execution import ActionExecution
 from app.models.audit_log import AuditLog
 from app.models.mitigation import MitigationPlan, MitigationPlanStep
 from app.models.risk import RiskEvent, RiskEventImpact
@@ -20,6 +21,7 @@ from app.models.supply_chain import (
 )
 
 __all__ = [
+    "ActionExecution",
     "AuditLog",
     "CustomerOrder",
     "CustomerOrderItem",

@@ -47,4 +47,4 @@ class TimestampMixin:
     )
 
 
-from app.models import audit_log, mitigation, risk, supply_chain  # noqa: E402,F401
+from app.models import action_execution, audit_log, mitigation, risk, supply_chain  # noqa: E402,F401
