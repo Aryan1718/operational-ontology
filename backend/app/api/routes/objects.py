@@ -4,8 +4,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
-from app.api.dependencies import get_link_runtime, get_object_runtime
+from app.api.dependencies import (
+    get_link_runtime,
+    get_object_runtime,
+    get_request_actor_context,
+)
 from app.api.response_contract import build_success_response
+from app.ontology.actor_context import ActorContext
 from app.runtime.link_runtime import LinkRuntime
 from app.runtime.object_runtime import ObjectRuntime
 from app.schemas.common import ApiErrorResponse, SuccessResponse
@@ -21,6 +26,7 @@ router = APIRouter()
 
 ObjectRuntimeDependency = Annotated[ObjectRuntime, Depends(get_object_runtime)]
 LinkRuntimeDependency = Annotated[LinkRuntime, Depends(get_link_runtime)]
+ActorContextDependency = Annotated[ActorContext, Depends(get_request_actor_context)]
 
 
 @router.post(
@@ -58,6 +64,7 @@ def read_object_links(
     object_type: str,
     object_id: str,
     runtime: LinkRuntimeDependency,
+    actor: ActorContextDependency,
 ) -> SuccessResponse[AggregateLinkedObjectsResponse]:
     """Return all declared links for one source object."""
     return build_success_response(
@@ -65,6 +72,7 @@ def read_object_links(
         runtime.get_all_links(
             object_type=object_type,
             object_id=object_id,
+            actor=actor,
         ),
     )
 
@@ -84,6 +92,7 @@ def read_linked_objects(
     object_id: str,
     link_type: str,
     runtime: LinkRuntimeDependency,
+    actor: ActorContextDependency,
 ) -> SuccessResponse[LinkedObjectsResponse]:
     """Return objects linked from one source object through one declared link."""
     return build_success_response(
@@ -92,6 +101,7 @@ def read_linked_objects(
             object_type=object_type,
             object_id=object_id,
             link_type=link_type,
+            actor=actor,
         ),
     )
 

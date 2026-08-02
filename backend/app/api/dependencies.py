@@ -94,6 +94,7 @@ def get_link_runtime(
         registry=registry,
         repository=repository,
         object_runtime=object_runtime,
+        authorization_service=get_authorization_service(request),
     )
 
 

@@ -1,4 +1,4 @@
-"""Runtime service for stored ontology link traversal."""
+"""Runtime service for stored and flattened ontology link traversal."""
 
 from __future__ import annotations
 
@@ -9,8 +9,17 @@ from app.core.exceptions import (
     LinkNotFoundError,
     LinkResolutionNotImplementedError,
 )
+from app.ontology.actor_context import (
+    ActorContext,
+    AuthorizationCapability,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+)
 from app.ontology.registry import OntologyRegistry
 from app.repositories.object_repository import ObjectRepository
+from app.runtime.authorization_service import AuthorizationService
 from app.runtime.object_runtime import LoadedOntologyObject, ObjectRuntime
 from app.schemas.objects import (
     AggregateLinkObjectsResponse,
@@ -25,9 +34,11 @@ from app.schemas.ontology import (
     OntologyPropertyDefinition,
 )
 
+_SINGLE_TARGET_CARDINALITIES = {"many-to-one", "one-to-one"}
+
 
 class LinkRuntime:
-    """Resolve directly stored ontology links backed by declared property mappings."""
+    """Resolve ontology links backed by trusted declared metadata."""
 
     def __init__(
         self,
@@ -35,44 +46,48 @@ class LinkRuntime:
         registry: OntologyRegistry,
         repository: ObjectRepository,
         object_runtime: ObjectRuntime,
+        authorization_service: AuthorizationService,
     ) -> None:
         self._registry = registry
         self._repository = repository
         self._object_runtime = object_runtime
+        self._authorization_service = authorization_service
 
     def get_linked_objects(
         self,
         object_type: str,
         object_id: str,
         link_type: str,
+        actor: ActorContext,
     ) -> LinkedObjectsResponse:
-        """Return linked objects for one stored ontology link."""
+        """Return linked objects for one declared ontology link."""
         source_object = self._object_runtime.load_object(object_type, object_id)
         source_response = self._object_runtime.map_loaded_object(source_object)
-
-        link_definition = self._registry.get_link_type(link_type)
-        if link_definition is None:
-            raise LinkNotFoundError(object_type, link_type)
-
-        if link_definition.key not in source_object.definition.links:
-            raise LinkNotFoundError(object_type, link_type)
-
-        if link_definition.sourceObjectType != source_object.definition.key:
-            raise LinkNotFoundError(object_type, link_type)
-
-        if link_definition.kind != "stored":
-            raise LinkResolutionNotImplementedError(link_type, link_definition.kind)
-
-        return self._resolve_stored_link_from_source(
+        link_definition = self._get_declared_link_definition(
+            source_definition=source_object.definition,
+            link_type=link_type,
+        )
+        target_decision = self._authorize_link_traversal(
+            actor=actor,
+            source_definition=source_object.definition,
+            link_definition=link_definition,
+        )
+        return self._resolve_link_from_source(
             source_object=source_object,
             source_response=source_response,
             link_definition=link_definition,
+            target_projection_key=(
+                None
+                if target_decision.obligations is None
+                else target_decision.obligations.projection_key
+            ),
         )
 
     def get_all_links(
         self,
         object_type: str,
         object_id: str,
+        actor: ActorContext,
     ) -> AggregateLinkedObjectsResponse:
         """Return all declared links for one source object."""
         source_object = self._object_runtime.load_object(object_type, object_id)
@@ -80,22 +95,16 @@ class LinkRuntime:
 
         links: list[AggregateLinkObjectsResponse] = []
         for link_key in source_object.definition.links:
-            link_definition = self._registry.get_link_type(link_key)
-            if link_definition is None:
-                raise InvalidOntologyMappingError(
-                    source_object.definition.key,
-                    f"Declared link '{link_key}' was not found in the ontology registry.",
-                )
-            if link_definition.sourceObjectType != source_object.definition.key:
-                raise InvalidOntologyMappingError(
-                    source_object.definition.key,
-                    (
-                        f"Link '{link_definition.key}' declares source object type "
-                        f"'{link_definition.sourceObjectType}' but is attached to "
-                        f"'{source_object.definition.key}'."
-                    ),
-                )
-            if link_definition.kind != "stored":
+            link_definition = self._get_declared_link_definition(
+                source_definition=source_object.definition,
+                link_type=link_key,
+            )
+            target_decision = self._authorize_link_traversal(
+                actor=actor,
+                source_definition=source_object.definition,
+                link_definition=link_definition,
+            )
+            if link_definition.kind not in {"stored", "flattened"}:
                 links.append(
                     AggregateLinkObjectsResponse(
                         linkType=link_definition.key,
@@ -107,10 +116,15 @@ class LinkRuntime:
                 )
                 continue
 
-            resolved_link = self._resolve_stored_link_from_source(
+            resolved_link = self._resolve_link_from_source(
                 source_object=source_object,
                 source_response=source_response,
                 link_definition=link_definition,
+                target_projection_key=(
+                    None
+                    if target_decision.obligations is None
+                    else target_decision.obligations.projection_key
+                ),
             )
             links.append(
                 AggregateLinkObjectsResponse(
@@ -130,22 +144,97 @@ class LinkRuntime:
             links=links,
         )
 
+    def _resolve_link_from_source(
+        self,
+        *,
+        source_object: LoadedOntologyObject,
+        source_response: OntologyObjectResponse,
+        link_definition: OntologyLinkTypeDefinition,
+        target_projection_key: str | None,
+    ) -> LinkedObjectsResponse:
+        if link_definition.kind == "stored":
+            return self._resolve_stored_link_from_source(
+                source_object=source_object,
+                source_response=source_response,
+                link_definition=link_definition,
+                target_projection_key=target_projection_key,
+            )
+        if link_definition.kind == "flattened":
+            return self._resolve_flattened_link_from_source(
+                source_object=source_object,
+                source_response=source_response,
+                link_definition=link_definition,
+                target_projection_key=target_projection_key,
+            )
+        raise LinkResolutionNotImplementedError(link_definition.key, link_definition.kind)
+
+    def _get_declared_link_definition(
+        self,
+        *,
+        source_definition: OntologyObjectTypeDefinition,
+        link_type: str,
+    ) -> OntologyLinkTypeDefinition:
+        link_definition = self._registry.get_link_type(link_type)
+        if link_definition is None:
+            raise LinkNotFoundError(source_definition.key, link_type)
+        if link_definition.key not in source_definition.links:
+            raise LinkNotFoundError(source_definition.key, link_type)
+        if link_definition.sourceObjectType != source_definition.key:
+            raise LinkNotFoundError(source_definition.key, link_type)
+        return link_definition
+
+    def _authorize_link_traversal(
+        self,
+        *,
+        actor: ActorContext,
+        source_definition: OntologyObjectTypeDefinition,
+        link_definition: OntologyLinkTypeDefinition,
+    ) -> AuthorizationDecision:
+        self._authorize_object_read(actor=actor, object_type=source_definition.key)
+        self._authorization_service.authorize_or_raise(
+            AuthorizationRequest(
+                actor=actor,
+                capability=AuthorizationCapability.LINK_TRAVERSE,
+                resource=AuthorizationResource(
+                    resource_type=AuthorizationResourceType.LINK_TYPE,
+                    resource_key=link_definition.key,
+                ),
+            )
+        )
+        return self._authorize_object_read(
+            actor=actor,
+            object_type=link_definition.targetObjectType,
+        )
+
+    def _authorize_object_read(
+        self,
+        *,
+        actor: ActorContext,
+        object_type: str,
+    ) -> AuthorizationDecision:
+        return self._authorization_service.authorize_or_raise(
+            AuthorizationRequest(
+                actor=actor,
+                capability=AuthorizationCapability.OBJECT_READ,
+                resource=AuthorizationResource(
+                    resource_type=AuthorizationResourceType.OBJECT_TYPE,
+                    resource_key=object_type,
+                ),
+            )
+        )
+
     def _resolve_stored_link_from_source(
         self,
         *,
         source_object: LoadedOntologyObject,
         source_response: OntologyObjectResponse,
         link_definition: OntologyLinkTypeDefinition,
+        target_projection_key: str | None,
     ) -> LinkedObjectsResponse:
-        target_definition = self._registry.get_object_type(link_definition.targetObjectType)
-        if target_definition is None:
-            raise InvalidOntologyMappingError(
-                source_object.definition.key,
-                (
-                    f"Link '{link_definition.key}' references unknown target object "
-                    f"type '{link_definition.targetObjectType}'."
-                ),
-            )
+        target_definition = self._require_target_definition(
+            source_definition=source_object.definition,
+            link_definition=link_definition,
+        )
 
         source_property = self._require_stored_property(
             definition=source_object.definition,
@@ -177,23 +266,263 @@ class LinkRuntime:
             property_definition=source_property,
             object_definition=source_object.definition,
         )
-        linked_objects: list[OntologyObjectResponse] = []
+        target_records: list[Any] = []
         if source_value is not None:
             target_records = self._repository.get_many_by_column(
                 model=target_mapping.model,
                 filter_column=target_property.sourceColumn,
                 filter_value=source_value,
-                row_filter=link_definition.storage.rowFilter,
+                row_filter=self._merge_row_filters(
+                    target_definition.key,
+                    link_definition.storage.rowFilter if link_definition.storage else None,
+                    target_definition.source.rowFilter,
+                ),
                 order_by_column=target_mapping.identifier_column,
             )
-            linked_objects = [
-                self._object_runtime.map_record(
-                    definition=target_definition,
-                    mapping=target_mapping,
-                    record=record,
-                )
-                for record in target_records
-            ]
+
+        linked_objects = self._map_linked_objects(
+            target_definition=target_definition,
+            target_mapping=target_mapping,
+            target_records=target_records,
+            target_projection_key=target_projection_key,
+        )
+        return self._build_link_response(
+            source_response=source_response,
+            link_definition=link_definition,
+            target_definition=target_definition,
+            linked_objects=linked_objects,
+        )
+
+    def _resolve_flattened_link_from_source(
+        self,
+        *,
+        source_object: LoadedOntologyObject,
+        source_response: OntologyObjectResponse,
+        link_definition: OntologyLinkTypeDefinition,
+        target_projection_key: str | None,
+    ) -> LinkedObjectsResponse:
+        source_link, target_link = self._resolve_flattened_path(
+            source_definition=source_object.definition,
+            link_definition=link_definition,
+        )
+        association_definition = self._require_target_definition(
+            source_definition=source_object.definition,
+            link_definition=source_link,
+        )
+        target_definition = self._require_target_definition(
+            source_definition=association_definition,
+            link_definition=target_link,
+        )
+        association_mapping = self._repository.resolve_object_mapping(association_definition)
+        target_mapping = self._repository.resolve_object_mapping(target_definition)
+
+        source_property = self._require_stored_property(
+            definition=source_object.definition,
+            property_key=source_link.sourceJoinProperty,
+            field_name="flattened source join property",
+            link_definition=link_definition,
+        )
+        association_source_property = self._require_stored_property(
+            definition=association_definition,
+            property_key=source_link.targetJoinProperty,
+            field_name="flattened association source join property",
+            link_definition=link_definition,
+        )
+        association_target_property = self._require_stored_property(
+            definition=association_definition,
+            property_key=target_link.sourceJoinProperty,
+            field_name="flattened association target join property",
+            link_definition=link_definition,
+        )
+        target_property = self._require_stored_property(
+            definition=target_definition,
+            property_key=target_link.targetJoinProperty,
+            field_name="flattened target join property",
+            link_definition=link_definition,
+        )
+
+        self._validate_stored_link_storage(
+            link_definition=source_link,
+            source_definition=source_object.definition,
+            source_model=source_object.mapping.model,
+            source_property=source_property,
+            target_definition=association_definition,
+            target_model=association_mapping.model,
+            target_property=association_source_property,
+        )
+        self._validate_stored_link_storage(
+            link_definition=target_link,
+            source_definition=association_definition,
+            source_model=association_mapping.model,
+            source_property=association_target_property,
+            target_definition=target_definition,
+            target_model=target_mapping.model,
+            target_property=target_property,
+        )
+
+        source_value = self._read_property_value(
+            record=source_object.record,
+            model=source_object.mapping.model,
+            property_definition=source_property,
+            object_definition=source_object.definition,
+        )
+        target_records: list[Any] = []
+        if source_value is not None:
+            target_records = self._repository.get_many_by_flattened_path(
+                association_model=association_mapping.model,
+                association_source_column=association_source_property.sourceColumn,
+                association_target_column=association_target_property.sourceColumn,
+                source_filter_value=source_value,
+                association_row_filter=self._merge_row_filters(
+                    association_definition.key,
+                    association_definition.source.rowFilter,
+                    source_link.storage.rowFilter if source_link.storage else None,
+                    target_link.storage.rowFilter if target_link.storage else None,
+                ),
+                target_model=target_mapping.model,
+                target_identifier_column=target_mapping.identifier_column,
+                target_join_column=target_property.sourceColumn,
+                target_row_filter=target_definition.source.rowFilter,
+            )
+
+        linked_objects = self._map_linked_objects(
+            target_definition=target_definition,
+            target_mapping=target_mapping,
+            target_records=target_records,
+            target_projection_key=target_projection_key,
+        )
+        return self._build_link_response(
+            source_response=source_response,
+            link_definition=link_definition,
+            target_definition=target_definition,
+            linked_objects=linked_objects,
+        )
+
+    def _resolve_flattened_path(
+        self,
+        *,
+        source_definition: OntologyObjectTypeDefinition,
+        link_definition: OntologyLinkTypeDefinition,
+    ) -> tuple[OntologyLinkTypeDefinition, OntologyLinkTypeDefinition]:
+        if len(link_definition.path) != 2:
+            raise InvalidOntologyMappingError(
+                source_definition.key,
+                (
+                    f"Flattened link '{link_definition.key}' must declare a two-link path; "
+                    f"received {len(link_definition.path)} path entries."
+                ),
+            )
+        source_link = self._registry.get_link_type(link_definition.path[0])
+        target_link = self._registry.get_link_type(link_definition.path[1])
+        if source_link is None or target_link is None:
+            missing_key = (
+                link_definition.path[0] if source_link is None else link_definition.path[1]
+            )
+            raise InvalidOntologyMappingError(
+                source_definition.key,
+                (
+                    f"Flattened link '{link_definition.key}' references unknown path link "
+                    f"'{missing_key}'."
+                ),
+            )
+        if source_link.kind != "stored" or target_link.kind != "stored":
+            raise InvalidOntologyMappingError(
+                source_definition.key,
+                (
+                    f"Flattened link '{link_definition.key}' requires stored path links, "
+                    f"but received '{source_link.kind}' and '{target_link.kind}'."
+                ),
+            )
+        if source_link.sourceObjectType != source_definition.key:
+            raise InvalidOntologyMappingError(
+                source_definition.key,
+                (
+                    f"Flattened link '{link_definition.key}' path must start at "
+                    f"'{source_definition.key}'."
+                ),
+            )
+        if source_link.targetObjectType != target_link.sourceObjectType:
+            raise InvalidOntologyMappingError(
+                source_definition.key,
+                (
+                    f"Flattened link '{link_definition.key}' path is discontinuous between "
+                    f"'{source_link.key}' and '{target_link.key}'."
+                ),
+            )
+        if target_link.targetObjectType != link_definition.targetObjectType:
+            raise InvalidOntologyMappingError(
+                source_definition.key,
+                (
+                    f"Flattened link '{link_definition.key}' path ends at "
+                    f"'{target_link.targetObjectType}' instead of "
+                    f"'{link_definition.targetObjectType}'."
+                ),
+            )
+        return source_link, target_link
+
+    def _require_target_definition(
+        self,
+        *,
+        source_definition: OntologyObjectTypeDefinition,
+        link_definition: OntologyLinkTypeDefinition,
+    ) -> OntologyObjectTypeDefinition:
+        target_definition = self._registry.get_object_type(link_definition.targetObjectType)
+        if target_definition is None:
+            raise InvalidOntologyMappingError(
+                source_definition.key,
+                (
+                    f"Link '{link_definition.key}' references unknown target object "
+                    f"type '{link_definition.targetObjectType}'."
+                ),
+            )
+        return target_definition
+
+    def _map_linked_objects(
+        self,
+        *,
+        target_definition: OntologyObjectTypeDefinition,
+        target_mapping: Any,
+        target_records: list[Any],
+        target_projection_key: str | None,
+    ) -> list[OntologyObjectResponse]:
+        mapped_by_object_id: dict[str, OntologyObjectResponse] = {}
+        for record in target_records:
+            mapped = self._object_runtime.map_record(
+                definition=target_definition,
+                mapping=target_mapping,
+                record=record,
+            )
+            projected = self._apply_projection(mapped, target_projection_key)
+            mapped_by_object_id[projected.objectId] = projected
+        return [mapped_by_object_id[key] for key in sorted(mapped_by_object_id)]
+
+    def _apply_projection(
+        self,
+        response: OntologyObjectResponse,
+        projection_key: str | None,
+    ) -> OntologyObjectResponse:
+        _ = projection_key
+        return response
+
+    def _build_link_response(
+        self,
+        *,
+        source_response: OntologyObjectResponse,
+        link_definition: OntologyLinkTypeDefinition,
+        target_definition: OntologyObjectTypeDefinition,
+        linked_objects: list[OntologyObjectResponse],
+    ) -> LinkedObjectsResponse:
+        if (
+            link_definition.cardinality in _SINGLE_TARGET_CARDINALITIES
+            and len(linked_objects) > 1
+        ):
+            raise InvalidOntologyMappingError(
+                target_definition.key,
+                (
+                    f"Link '{link_definition.key}' declared cardinality "
+                    f"'{link_definition.cardinality}' but resolved multiple target objects."
+                ),
+            )
 
         return LinkedObjectsResponse(
             source=OntologyObjectReference(
@@ -325,3 +654,22 @@ class LinkRuntime:
                 object_definition.key,
                 f"Unknown {field_name} '{exc.args[0]}'.",
             ) from exc
+
+    def _merge_row_filters(
+        self,
+        object_type: str,
+        *row_filters: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        merged: dict[str, Any] = {}
+        for row_filter in row_filters:
+            for column_name, value in (row_filter or {}).items():
+                if column_name in merged and merged[column_name] != value:
+                    raise InvalidOntologyMappingError(
+                        object_type,
+                        (
+                            f"Conflicting row-filter values were declared for column "
+                            f"'{column_name}'."
+                        ),
+                    )
+                merged[column_name] = value
+        return merged or None

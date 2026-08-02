@@ -264,6 +264,41 @@ class ObjectRepository:
         statement = statement.order_by(self._get_column(model, order_by_column))
         return list(self._session.execute(statement).scalars().all())
 
+    def get_many_by_flattened_path(
+        self,
+        *,
+        association_model: ModelType,
+        association_source_column: str,
+        association_target_column: str,
+        source_filter_value: Any,
+        association_row_filter: dict[str, Any] | None,
+        target_model: ModelType,
+        target_identifier_column: str,
+        target_join_column: str,
+        target_row_filter: dict[str, Any] | None,
+    ) -> list[Any]:
+        """Return target records for one validated two-hop flattened link path."""
+        association_source = self._get_column(association_model, association_source_column)
+        association_target = self._get_column(association_model, association_target_column)
+        target_join = self._get_column(target_model, target_join_column)
+        target_identifier = self._get_column(target_model, target_identifier_column)
+
+        statement = (
+            select(target_model)
+            .select_from(association_model)
+            .join(target_model, target_join == association_target)
+            .where(association_source == source_filter_value)
+            .distinct()
+            .order_by(target_identifier)
+        )
+        for column_name, value in (association_row_filter or {}).items():
+            statement = statement.where(
+                self._get_column(association_model, column_name) == value
+            )
+        for column_name, value in (target_row_filter or {}).items():
+            statement = statement.where(self._get_column(target_model, column_name) == value)
+        return list(self._session.execute(statement).scalars().all())
+
     def search(
         self,
         *,
