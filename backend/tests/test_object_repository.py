@@ -263,6 +263,11 @@ def test_repository_search_applies_sorting_and_identifier_tie_breaking(
     assert definition is not None
     mapping = repository.resolve_object_mapping(definition)
 
+    database_session.query(Supplier).filter(
+        Supplier.supplier_code.in_(("S-104", "S-105"))
+    ).delete(synchronize_session=False)
+    database_session.commit()
+
     database_session.add_all(
         [
             Supplier(
@@ -312,6 +317,11 @@ def test_repository_search_applies_sorting_and_identifier_tie_breaking(
 
     supplier_codes = [record.supplier_code for record in page.records]
     assert supplier_codes.index("S-104") < supplier_codes.index("S-105")
+
+    database_session.query(Supplier).filter(
+        Supplier.supplier_code.in_(("S-104", "S-105"))
+    ).delete(synchronize_session=False)
+    database_session.commit()
 
 
 def test_repository_search_paginates_with_opaque_cursor(

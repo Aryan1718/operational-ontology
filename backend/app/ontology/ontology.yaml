@@ -2140,6 +2140,37 @@ linkTypes:
       - inventoryPositionToPart
 
 functions:
+  getInventoryAvailability:
+    key: getInventoryAvailability
+    displayName: Get Inventory Availability
+    description: Summarize currently available inventory for a part across warehouses.
+    handler: getInventoryAvailability
+    readOnly: true
+    inputModel: GetInventoryAvailabilityParameters
+    outputModel: InventoryAvailabilityResult
+    parameters:
+      type: object
+      required:
+        - partId
+      properties:
+        partId:
+          type: string
+          minLength: 1
+    returns:
+      type: object
+      required:
+        - partId
+        - totalAvailableQuantity
+        - warehouses
+      properties:
+        partId:
+          type: string
+        totalAvailableQuantity:
+          type: string
+        warehouses:
+          type: array
+          items:
+            type: object
   findImpactedParts:
     key: findImpactedParts
     displayName: Find Impacted Parts
@@ -2391,7 +2422,6 @@ functions:
                 type: string
               rankingExplanation:
                 type: string
-
   calculateStockoutRisk:
     key: calculateStockoutRisk
     displayName: Calculate Stockout Risk
@@ -2475,7 +2505,6 @@ functions:
           type: array
           items:
             type: string
-
   findAlternativeWarehouses:
     key: findAlternativeWarehouses
     displayName: Find Alternative Warehouses
@@ -2570,104 +2599,109 @@ functions:
                     type: array
                     items:
                       type: string
-
-
   findExpeditablePurchaseOrders:
-  key: findExpeditablePurchaseOrders
-  displayName: Find Expeditable Purchase Orders
-  description: Find feasible purchase orders that can be expedited for a part.
-  handler: findExpeditablePurchaseOrders
-  readOnly: true
-  inputModel: FindExpeditablePurchaseOrdersParameters
-  outputModel: FindExpeditablePurchaseOrdersResult
-  parameters:
-    type: object
-    required:
-      - partId
-      - requiredByDate
-    properties:
-      partId:
-        type: string
-        minLength: 1
-      supplierId:
-        type: string
-        minLength: 1
-      requiredByDate:
-        type: string
-        format: date
-  returns:
-    type: object
-    required:
-      - items
-    properties:
-      items:
-        type: array
+    key: findExpeditablePurchaseOrders
+    displayName: Find Expeditable Purchase Orders
+    description: Find feasible purchase orders that can be expedited for a part.
+    handler: findExpeditablePurchaseOrders
+    readOnly: true
+    inputModel: FindExpeditablePurchaseOrdersParameters
+    outputModel: FindExpeditablePurchaseOrdersResult
+    parameters:
+      type: object
+      required:
+        - partId
+        - requiredByDate
+      properties:
+        partId:
+          type: string
+          minLength: 1
+        supplierId:
+          type: string
+          minLength: 1
+        requiredByDate:
+          type: string
+          format: date
+    returns:
+      type: object
+      required:
+        - items
+      properties:
         items:
-          type: object
-          required:
-            - purchaseOrderId
-            - purchaseOrderNumber
-            - supplierId
-            - openQuantity
-            - currentExpectedDate
-            - possibleExpeditedDate
-            - daysSaved
-            - currentRemainingValue
-            - additionalCost
-            - feasible
-            - infeasibilityReasons
-            - estimator
-          properties:
-            purchaseOrderId:
-              type: string
-            purchaseOrderNumber:
-              type: string
-            supplierId:
-              type: string
-            destinationWarehouseId:
-              type: string
-            openQuantity:
-              type: number
-            currentExpectedDate:
-              type: string
-              format: date
-            possibleExpeditedDate:
-              type: string
-              format: date
-            daysSaved:
-              type: integer
-            currentRemainingValue:
-              type: string
-            additionalCost:
-              type: string
-            feasible:
-              type: boolean
-            infeasibilityReasons:
-              type: array
-              items:
+          type: array
+          items:
+            type: object
+            required:
+              - purchaseOrderId
+              - purchaseOrderNumber
+              - supplierId
+              - openQuantity
+              - currentExpectedDate
+              - possibleExpeditedDate
+              - daysSaved
+              - currentRemainingValue
+              - additionalCost
+              - feasible
+              - infeasibilityReasons
+              - estimator
+            properties:
+              purchaseOrderId:
                 type: string
-            estimator:
-              type: object
-              required:
-                - name
-                - leadTimeReductionPercent
-                - premiumPercent
-                - minimumLeadTimeDays
-                - assumptions
-              properties:
-                name:
+              purchaseOrderNumber:
+                type: string
+              supplierId:
+                type: string
+              destinationWarehouseId:
+                type: string
+              openQuantity:
+                type: number
+              currentExpectedDate:
+                type: string
+                format: date
+              possibleExpeditedDate:
+                type: string
+                format: date
+              daysSaved:
+                type: integer
+              currentRemainingValue:
+                type: string
+              additionalCost:
+                type: string
+              feasible:
+                type: boolean
+              infeasibilityReasons:
+                type: array
+                items:
                   type: string
-                leadTimeReductionPercent:
-                  type: number
-                premiumPercent:
-                  type: number
-                minimumLeadTimeDays:
-                  type: integer
-                assumptions:
-                  type: array
-                  items:
+              estimator:
+                type: object
+                required:
+                  - name
+                  - leadTimeReductionPercent
+                  - premiumPercent
+                  - minimumLeadTimeDays
+                  - assumptions
+                properties:
+                  name:
                     type: string
-
+                  leadTimeReductionPercent:
+                    type: number
+                  premiumPercent:
+                    type: number
+                  minimumLeadTimeDays:
+                    type: integer
+                  assumptions:
+                    type: array
+                    items:
+                      type: string
+  validateMitigationPlan:
+    key: validateMitigationPlan
+    displayName: Validate Mitigation Plan
+    description: Validate a prepared mitigation plan without mutating operational state.
+    handler: validateMitigationPlan
+    readOnly: true
+    inputModel: ValidateMitigationPlanParameters
+    outputModel: ValidateMitigationPlanResult
 
   recommendMitigationPlan:
     key: recommendMitigationPlan
@@ -2740,3 +2774,241 @@ functions:
           type: number
         explanation:
           type: string
+
+actions:
+  createRiskEvent:
+    key: createRiskEvent
+    displayName: Create Risk Event
+    description: Record a supply-chain risk event.
+    handler: createRiskEvent
+    targetObjectType: RiskEvent
+  findImpactedParts:
+    key: findImpactedParts
+    displayName: Find Impacted Parts
+    description: Execute impacted-part analysis through the action surface when exposed.
+    handler: findImpactedParts
+    targetObjectType: RiskEvent
+  findImpactedProducts:
+    key: findImpactedProducts
+    displayName: Find Impacted Products
+    description: Execute impacted-product analysis through the action surface when exposed.
+    handler: findImpactedProducts
+    targetObjectType: RiskEvent
+  findImpactedOrders:
+    key: findImpactedOrders
+    displayName: Find Impacted Orders
+    description: Execute impacted-order analysis through the action surface when exposed.
+    handler: findImpactedOrders
+    targetObjectType: RiskEvent
+  calculateStockoutRisk:
+    key: calculateStockoutRisk
+    displayName: Calculate Stockout Risk
+    description: Calculate stockout risk through the governed action surface when required.
+    handler: calculateStockoutRisk
+    targetObjectType: Part
+  findAlternativeWarehouses:
+    key: findAlternativeWarehouses
+    displayName: Find Alternative Warehouses
+    description: Evaluate candidate warehouses for inventory reallocation.
+    handler: findAlternativeWarehouses
+    targetObjectType: Part
+  findExpeditablePurchaseOrders:
+    key: findExpeditablePurchaseOrders
+    displayName: Find Expeditable Purchase Orders
+    description: Evaluate candidate purchase orders for expediting.
+    handler: findExpeditablePurchaseOrders
+    targetObjectType: Part
+  rankImpactedOrders:
+    key: rankImpactedOrders
+    displayName: Rank Impacted Orders
+    description: Rank impacted customer orders for operational attention.
+    handler: rankImpactedOrders
+    targetObjectType: RiskEvent
+  generateMitigationPlan:
+    key: generateMitigationPlan
+    displayName: Generate Mitigation Plan
+    description: Create a mitigation plan from the current disruption analysis.
+    handler: generateMitigationPlan
+    targetObjectType: RiskEvent
+  approveMitigationPlan:
+    key: approveMitigationPlan
+    displayName: Approve Mitigation Plan
+    description: Approve a prepared mitigation plan for execution.
+    handler: approveMitigationPlan
+    targetObjectType: MitigationPlan
+  reallocateInventory:
+    key: reallocateInventory
+    displayName: Reallocate Inventory
+    description: Move inventory between warehouses as a child operational step.
+    handler: reallocateInventory
+    targetObjectType: InventoryTransfer
+  expeditePurchaseOrder:
+    key: expeditePurchaseOrder
+    displayName: Expedite Purchase Order
+    description: Expedite an existing purchase order as a child operational step.
+    handler: expeditePurchaseOrder
+    targetObjectType: PurchaseOrder
+
+roles:
+  Viewer:
+    key: Viewer
+    displayName: Viewer
+    description: Read-only operational user.
+  Planner:
+    key: Planner
+    displayName: Planner
+    description: Planner who can analyze disruptions and prepare mitigation plans.
+  OperationsManager:
+    key: OperationsManager
+    displayName: Operations Manager
+    description: Human approver for governed operational changes.
+  Admin:
+    key: Admin
+    displayName: Admin
+    description: Administrative user with broad operational authority.
+  AIAgent:
+    key: AIAgent
+    displayName: AI Agent
+    description: Restricted AI actor limited to approved read-only ontology capabilities.
+
+permissions:
+  permissionModel:
+    version: 1.0.0
+    defaultEffect: deny
+  objectTypeDefaults:
+    list:
+      capability: object.list
+      resourceType: objectType
+      resourceKey: __template__
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    search:
+      capability: object.search
+      resourceType: objectType
+      resourceKey: __template__
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    read:
+      capability: object.read
+      resourceType: objectType
+      resourceKey: __template__
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+  linkTypeDefaults:
+    traverse:
+      capability: link.traverse
+      resourceType: linkType
+      resourceKey: __template__
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+  policies:
+    - capability: ontology.metadata.read
+      resourceType: ontology
+      resourceKey: operationalOntology
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: permission.metadata.read
+      resourceType: ontology
+      resourceKey: operationalOntology
+      allowedRoles: [Admin]
+      allowedActorTypes: [human, service]
+      allowedInvocationSources: [web_app, api, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: getInventoryAvailability
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findImpactedParts
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findImpactedProducts
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findImpactedOrders
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: rankImpactedOrders
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: calculateStockoutRisk
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findAlternativeWarehouses
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: findExpeditablePurchaseOrders
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: validateMitigationPlan
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: function.execute
+      resourceType: function
+      resourceKey: recommendMitigationPlan
+      allowedRoles: [Viewer, Planner, OperationsManager, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, background_job, internal]
+    - capability: action.execute
+      resourceType: action
+      resourceKey: createRiskEvent
+      allowedRoles: [Planner, OperationsManager, Admin]
+      allowedActorTypes: [human, service]
+      allowedInvocationSources: [web_app, api, internal]
+    - capability: action.execute
+      resourceType: action
+      resourceKey: generateMitigationPlan
+      allowedRoles: [Planner, Admin]
+      allowedActorTypes: [human, service]
+      allowedInvocationSources: [web_app, api, internal]
+    - capability: action.execute
+      resourceType: action
+      resourceKey: approveMitigationPlan
+      allowedRoles: [OperationsManager, Admin]
+      allowedActorTypes: [human, service]
+      allowedInvocationSources: [web_app, api, internal]
+    - capability: action.execute
+      resourceType: action
+      resourceKey: reallocateInventory
+      allowedRoles: [OperationsManager, Admin]
+      allowedActorTypes: [human, service]
+      allowedInvocationSources: [internal]
+      requireInternalDispatch: true
+      allowedParentActionKeys: [approveMitigationPlan]
+    - capability: action.execute
+      resourceType: action
+      resourceKey: expeditePurchaseOrder
+      allowedRoles: [OperationsManager, Admin]
+      allowedActorTypes: [human, service]
+      allowedInvocationSources: [internal]
+      requireInternalDispatch: true
+      allowedParentActionKeys: [approveMitigationPlan]
