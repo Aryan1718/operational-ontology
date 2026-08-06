@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import ConfigDict, Field, field_validator
 
+from app.models.action_execution import ActionExecutionInvocationMode, ActionExecutionStatus
 from app.schemas.common import ApiBaseModel
 
 
@@ -25,6 +26,34 @@ class ActionExecutionResponse(ApiBaseModel):
     action_name: str = Field(alias="actionName")
     result: Any
     warnings: list[str] = Field(default_factory=list)
+
+
+class ActionExecutionActorSummary(ApiBaseModel):
+    """Compact actor identity summary included in execution history responses."""
+
+    actor_id: str = Field(alias="actorId")
+    actor_role: str = Field(alias="actorRole")
+
+
+class ActionExecutionSummary(ApiBaseModel):
+    """Compact public action execution history summary."""
+
+    execution_id: str = Field(alias="executionId")
+    action_type_id: str = Field(alias="actionTypeId")
+    status: ActionExecutionStatus
+    actor: ActionExecutionActorSummary
+    invocation_mode: ActionExecutionInvocationMode = Field(alias="invocationMode")
+    parent_execution_id: str | None = Field(alias="parentExecutionId", default=None)
+    started_at: datetime = Field(alias="startedAt")
+    completed_at: datetime | None = Field(alias="completedAt", default=None)
+    failure_code: str | None = Field(alias="failureCode", default=None)
+    failure_message: str | None = Field(alias="failureMessage", default=None)
+
+
+class ActionExecutionListResponse(ApiBaseModel):
+    """Paginated action execution history response payload."""
+
+    executions: list[ActionExecutionSummary] = Field(default_factory=list)
 
 
 class GenerateMitigationPlanParameters(ApiBaseModel):

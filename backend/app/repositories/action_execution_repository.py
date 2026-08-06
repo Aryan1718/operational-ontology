@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -16,6 +17,7 @@ from app.models.action_execution import (
     ActionExecutionStatus,
 )
 from app.ontology.actor_context import OntologyRole
+from app.repositories.object_repository import ObjectSearchCursorCodec, SearchResultPage
 from app.schemas.objects import OntologyObjectReference
 
 
@@ -36,6 +38,17 @@ class ActionExecutionPersistenceError(ApplicationError):
             status_code=status_code,
             details=details,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ActionExecutionListFilters:
+    """Optional public list filters bound to persisted action execution columns."""
+
+    action_type_id: str | None = None
+    status: str | None = None
+    actor_id: str | None = None
+    invocation_mode: str | None = None
+    parent_execution_id: str | None = None
 
 
 class ActionExecutionRepository:
@@ -81,6 +94,33 @@ class ActionExecutionRepository:
     def get_by_execution_id(self, execution_id: str) -> ActionExecution | None:
         statement = self._select_by_execution_id(execution_id)
         return self._session.execute(statement).scalar_one_or_none()
+
+    def list_execution_summaries(
+        self,
+        *,
+        filters: ActionExecutionListFilters,
+        limit: int,
+        cursor: str | None,
+    ) -> SearchResultPage:
+        offset = 0 if cursor is None else ObjectSearchCursorCodec.decode(cursor)
+        statement = select(ActionExecution)
+        statement = self._apply_list_filters(statement, filters)
+        statement = statement.order_by(
+            ActionExecution.started_at.desc(),
+            ActionExecution.execution_id.desc(),
+        )
+        statement = statement.offset(offset).limit(limit + 1)
+
+        records = list(self._session.execute(statement).scalars().all())
+        has_more = len(records) > limit
+        page_records = records[:limit]
+        next_cursor = ObjectSearchCursorCodec.encode(offset + limit) if has_more else None
+
+        return SearchResultPage(
+            records=page_records,
+            next_cursor=next_cursor,
+            has_more=has_more,
+        )
 
     def mark_succeeded(
         self,
@@ -148,6 +188,25 @@ class ActionExecutionRepository:
     @staticmethod
     def _select_by_execution_id(execution_id: str) -> Select[tuple[ActionExecution]]:
         return select(ActionExecution).where(ActionExecution.execution_id == execution_id)
+
+    @staticmethod
+    def _apply_list_filters(
+        statement: Select[tuple[ActionExecution]],
+        filters: ActionExecutionListFilters,
+    ) -> Select[tuple[ActionExecution]]:
+        if filters.action_type_id is not None:
+            statement = statement.where(ActionExecution.action_type == filters.action_type_id)
+        if filters.status is not None:
+            statement = statement.where(ActionExecution.status == filters.status)
+        if filters.actor_id is not None:
+            statement = statement.where(ActionExecution.actor_id == filters.actor_id)
+        if filters.invocation_mode is not None:
+            statement = statement.where(ActionExecution.invocation_mode == filters.invocation_mode)
+        if filters.parent_execution_id is not None:
+            statement = statement.where(
+                ActionExecution.parent_execution_id == filters.parent_execution_id
+            )
+        return statement
 
     def _normalize_affected_objects(
         self,
