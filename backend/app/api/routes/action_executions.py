@@ -60,7 +60,7 @@ def list_action_executions(
     actor: ActorContextDependency,
     authorization_service: AuthorizationServiceDependency,
     limit: int = Query(default=20, ge=1, le=100),
-    cursor: str | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
     action_type_id: str | None = Query(default=None, alias="actionTypeId"),
     status: str | None = Query(default=None),
     actor_id: str | None = Query(default=None, alias="actorId"),
@@ -79,7 +79,7 @@ def list_action_executions(
             parent_execution_id=_normalize_optional_filter("parentExecutionId", parent_execution_id),
         ),
         limit=limit,
-        cursor=_normalize_cursor(cursor),
+        offset=offset,
     )
     payload = ActionExecutionListResponse(
         executions=[_build_execution_summary(execution) for execution in page.records],
@@ -87,7 +87,7 @@ def list_action_executions(
     return build_success_response(
         request,
         payload,
-        next_cursor=page.next_cursor,
+        next_cursor=None,
         has_more=page.has_more,
     )
 
@@ -147,14 +147,6 @@ def _build_execution_summary(execution: ActionExecution) -> ActionExecutionSumma
         failureMessage=execution.error_message,
     )
 
-
-def _normalize_cursor(raw_cursor: str | None) -> str | None:
-    if raw_cursor is None:
-        return None
-    normalized = raw_cursor.strip()
-    if not normalized:
-        raise InvalidRequestError(details={"cursor": "Cursor must not be empty."})
-    return normalized
 
 
 def _normalize_optional_filter(field_name: str, raw_value: str | None) -> str | None:

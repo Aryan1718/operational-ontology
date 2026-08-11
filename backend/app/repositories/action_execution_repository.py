@@ -17,7 +17,7 @@ from app.models.action_execution import (
     ActionExecutionStatus,
 )
 from app.ontology.actor_context import OntologyRole
-from app.repositories.object_repository import ObjectSearchCursorCodec, SearchResultPage
+from app.repositories.object_repository import SearchResultPage
 from app.schemas.objects import OntologyObjectReference
 
 
@@ -100,9 +100,8 @@ class ActionExecutionRepository:
         *,
         filters: ActionExecutionListFilters,
         limit: int,
-        cursor: str | None,
+        offset: int,
     ) -> SearchResultPage:
-        offset = 0 if cursor is None else ObjectSearchCursorCodec.decode(cursor)
         statement = select(ActionExecution)
         statement = self._apply_list_filters(statement, filters)
         statement = statement.order_by(
@@ -114,11 +113,10 @@ class ActionExecutionRepository:
         records = list(self._session.execute(statement).scalars().all())
         has_more = len(records) > limit
         page_records = records[:limit]
-        next_cursor = ObjectSearchCursorCodec.encode(offset + limit) if has_more else None
 
         return SearchResultPage(
             records=page_records,
-            next_cursor=next_cursor,
+            next_cursor=None,
             has_more=has_more,
         )
 
