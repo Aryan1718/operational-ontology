@@ -56,6 +56,25 @@ class ActionExecutionListResponse(ApiBaseModel):
     executions: list[ActionExecutionSummary] = Field(default_factory=list)
 
 
+class ActionExecutionDetailResponse(ApiBaseModel):
+    """One persisted governed action execution."""
+
+    execution_id: str = Field(alias="executionId")
+    action_type_id: str = Field(alias="actionTypeId")
+    action_version: str = Field(alias="actionVersion")
+    status: ActionExecutionStatus
+    actor: ActionExecutionActorSummary
+    invocation_mode: ActionExecutionInvocationMode = Field(alias="invocationMode")
+    parent_execution_id: str | None = Field(alias="parentExecutionId", default=None)
+    reason: str | None = None
+    started_at: datetime = Field(alias="startedAt")
+    completed_at: datetime | None = Field(alias="completedAt", default=None)
+    result_payload: Any | None = Field(alias="resultPayload", default=None)
+    failure_code: str | None = Field(alias="failureCode", default=None)
+    failure_message: str | None = Field(alias="failureMessage", default=None)
+    affected_objects: list[dict[str, str]] | None = Field(alias="affectedObjects", default=None)
+
+
 class GenerateMitigationPlanParameters(ApiBaseModel):
     """Stable public input for generateMitigationPlan."""
 

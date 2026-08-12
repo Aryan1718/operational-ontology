@@ -55,6 +55,17 @@ class AuditRepository:
         self._session.flush()
         return audit_log
 
+    def get_by_execution_id(self, execution_id: str) -> list[AuditLog]:
+        statement = (
+            select(AuditLog)
+            .where(AuditLog.execution_id == execution_id)
+            .order_by(
+                AuditLog.created_at.asc(),
+                AuditLog.id.asc(),
+            )
+        )
+        return list(self._session.execute(statement).scalars().all())
+
     def list_audit_logs(
         self,
         *,
