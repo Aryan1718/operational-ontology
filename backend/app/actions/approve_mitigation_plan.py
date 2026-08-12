@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from app.core.exceptions import ApplicationError, ObjectNotFoundError
-from app.models.audit_log import AuditLog
+from app.repositories.audit_repository import AuditRepository
 from app.models.mitigation import MitigationPlan, MitigationPlanStep
 from app.runtime.action_engine import ActionExecutionContext
 from app.schemas.actions import (
@@ -184,17 +184,15 @@ def _record_plan_audit(
     previous_state: dict[str, object | None],
     reason: str,
 ) -> None:
-    context.session.add(
-        AuditLog(
-            actor_user_id=_try_parse_uuid(context.actor.actor_id),
-            action_type="approveMitigationPlan",
-            object_type="mitigation_plan",
-            object_id=plan.id,
-            previous_value=previous_state,
-            new_value=_serialize_plan_state(plan),
-            reason=reason,
-            created_at=context.executed_at,
-        )
+    AuditRepository(context.session).create_audit_log(
+        actor_user_id=_try_parse_uuid(context.actor.actor_id),
+        execution_id=context.execution_id,
+        action_type="approveMitigationPlan",
+        object_type="mitigation_plan",
+        object_id=plan.id,
+        previous_value=previous_state,
+        new_value=_serialize_plan_state(plan),
+        reason=reason,
     )
 
 

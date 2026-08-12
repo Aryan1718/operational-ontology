@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Select, select
@@ -23,10 +24,36 @@ class AuditLogListFilters:
 
 
 class AuditRepository:
-    """Retrieve persisted audit log rows inside the caller transaction."""
+    """Retrieve and persist audit log rows inside the caller transaction."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
+
+    def create_audit_log(
+        self,
+        *,
+        actor_user_id: UUID | None,
+        execution_id: str | None,
+        action_type: str,
+        object_type: str,
+        object_id: UUID,
+        previous_value: dict[str, Any] | None,
+        new_value: dict[str, Any] | None,
+        reason: str | None,
+    ) -> AuditLog:
+        audit_log = AuditLog(
+            actor_user_id=actor_user_id,
+            execution_id=execution_id,
+            action_type=action_type,
+            object_type=object_type,
+            object_id=object_id,
+            previous_value=previous_value,
+            new_value=new_value,
+            reason=reason,
+        )
+        self._session.add(audit_log)
+        self._session.flush()
+        return audit_log
 
     def list_audit_logs(
         self,

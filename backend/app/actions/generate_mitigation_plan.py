@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from app.core.exceptions import ApplicationError
-from app.models.audit_log import AuditLog
+from app.repositories.audit_repository import AuditRepository
 from app.models.mitigation import MitigationPlan, MitigationPlanStep
 from app.models.risk import RiskEvent
 from app.models.supply_chain import Part, PurchaseOrder, Shipment, Warehouse
@@ -425,23 +425,21 @@ def _record_plan_audit(
     recommendation: Any,
     notes: str | None,
 ) -> None:
-    context.session.add(
-        AuditLog(
-            actor_user_id=_try_parse_uuid(context.actor.actor_id),
-            action_type="generateMitigationPlan",
-            object_type="mitigation_plan",
-            object_id=plan.id,
-            previous_value=None,
-            new_value={
-                "mitigationCode": plan.mitigation_code,
-                "riskEventId": recommendation.risk_event_id,
-                "status": "draft",
-                "strategy": recommendation.recommended_strategy,
-                "stepCount": len(recommendation.mitigation_steps),
-            },
-            reason=notes,
-            created_at=context.executed_at,
-        )
+    AuditRepository(context.session).create_audit_log(
+        actor_user_id=_try_parse_uuid(context.actor.actor_id),
+        execution_id=context.execution_id,
+        action_type="generateMitigationPlan",
+        object_type="mitigation_plan",
+        object_id=plan.id,
+        previous_value=None,
+        new_value={
+            "mitigationCode": plan.mitigation_code,
+            "riskEventId": recommendation.risk_event_id,
+            "status": "draft",
+            "strategy": recommendation.recommended_strategy,
+            "stepCount": len(recommendation.mitigation_steps),
+        },
+        reason=notes,
     )
 
 
@@ -450,22 +448,20 @@ def _record_step_audit(
     step: MitigationPlanStep,
     recommended_step: Any,
 ) -> None:
-    context.session.add(
-        AuditLog(
-            actor_user_id=_try_parse_uuid(context.actor.actor_id),
-            action_type="generateMitigationPlan",
-            object_type="mitigation_plan_step",
-            object_id=step.id,
-            previous_value=None,
-            new_value={
-                "sequenceNumber": recommended_step.sequence_number,
-                "stepType": recommended_step.step_type,
-                "targetObjectType": recommended_step.target_object_type,
-                "targetObjectId": recommended_step.target_object_id,
-            },
-            reason=None,
-            created_at=context.executed_at,
-        )
+    AuditRepository(context.session).create_audit_log(
+        actor_user_id=_try_parse_uuid(context.actor.actor_id),
+        execution_id=context.execution_id,
+        action_type="generateMitigationPlan",
+        object_type="mitigation_plan_step",
+        object_id=step.id,
+        previous_value=None,
+        new_value={
+            "sequenceNumber": recommended_step.sequence_number,
+            "stepType": recommended_step.step_type,
+            "targetObjectType": recommended_step.target_object_type,
+            "targetObjectId": recommended_step.target_object_id,
+        },
+        reason=None,
     )
 
 

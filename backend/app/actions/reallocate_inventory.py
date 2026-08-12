@@ -8,9 +8,9 @@ from uuid import UUID
 from sqlalchemy import case, select
 
 from app.core.exceptions import ApplicationError, ObjectNotFoundError
-from app.models.audit_log import AuditLog
 from app.models.mitigation import MitigationPlan
 from app.models.supply_chain import Inventory, Part, Warehouse
+from app.repositories.audit_repository import AuditRepository
 from app.runtime.action_engine import ActionExecutionContext
 from app.schemas.actions import (
     ReallocatedInventoryPosition,
@@ -307,39 +307,37 @@ def _record_inventory_audit(
     mitigation_plan_id: str,
     parameters: ReallocateInventoryParameters,
 ) -> None:
-    context.session.add(
-        AuditLog(
-            actor_user_id=_try_parse_uuid(context.actor.actor_id),
-            action_type="reallocateInventory",
-            object_type="inventory",
-            object_id=inventory.id,
-            previous_value=_build_audit_state(
-                context=context,
-                inventory_role=inventory_role,
-                inventory=inventory,
-                warehouse_id=warehouse_id,
-                part_id=part_id,
-                quantity=previous_quantity,
-                counterpart_warehouse_id=counterpart_warehouse_id,
-                counterpart_quantity=counterpart_previous_quantity,
-                mitigation_plan_id=mitigation_plan_id,
-                parameters=parameters,
-            ),
-            new_value=_build_audit_state(
-                context=context,
-                inventory_role=inventory_role,
-                inventory=inventory,
-                warehouse_id=warehouse_id,
-                part_id=part_id,
-                quantity=new_quantity,
-                counterpart_warehouse_id=counterpart_warehouse_id,
-                counterpart_quantity=counterpart_new_quantity,
-                mitigation_plan_id=mitigation_plan_id,
-                parameters=parameters,
-            ),
-            reason=parameters.reason,
-            created_at=context.executed_at,
-        )
+    AuditRepository(context.session).create_audit_log(
+        actor_user_id=_try_parse_uuid(context.actor.actor_id),
+        execution_id=context.execution_id,
+        action_type="reallocateInventory",
+        object_type="inventory",
+        object_id=inventory.id,
+        previous_value=_build_audit_state(
+            context=context,
+            inventory_role=inventory_role,
+            inventory=inventory,
+            warehouse_id=warehouse_id,
+            part_id=part_id,
+            quantity=previous_quantity,
+            counterpart_warehouse_id=counterpart_warehouse_id,
+            counterpart_quantity=counterpart_previous_quantity,
+            mitigation_plan_id=mitigation_plan_id,
+            parameters=parameters,
+        ),
+        new_value=_build_audit_state(
+            context=context,
+            inventory_role=inventory_role,
+            inventory=inventory,
+            warehouse_id=warehouse_id,
+            part_id=part_id,
+            quantity=new_quantity,
+            counterpart_warehouse_id=counterpart_warehouse_id,
+            counterpart_quantity=counterpart_new_quantity,
+            mitigation_plan_id=mitigation_plan_id,
+            parameters=parameters,
+        ),
+        reason=parameters.reason,
     )
 
 

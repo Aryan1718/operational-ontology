@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from app.core.exceptions import ApplicationError, ObjectNotFoundError
-from app.models.audit_log import AuditLog
+from app.repositories.audit_repository import AuditRepository
 from app.models.mitigation import MitigationPlan, MitigationPlanStep
 from app.models.supply_chain import Part, PurchaseOrder, PurchaseOrderItem
 from app.runtime.action_engine import ActionExecutionContext
@@ -487,34 +487,32 @@ def _record_purchase_order_audit(
     previous_expedite_cost: Decimal | None,
     reason: str,
 ) -> None:
-    context.session.add(
-        AuditLog(
-            actor_user_id=_try_parse_uuid(context.actor.actor_id),
-            action_type="expeditePurchaseOrder",
-            object_type="purchase_order",
-            object_id=purchase_order.id,
-            previous_value={
-                "purchaseOrderId": purchase_order.purchase_order_code,
-                "expectedDeliveryDate": previous_expected_delivery_date.isoformat(),
-                "expedited": previous_expedited,
-                "expediteCost": (
-                    str(previous_expedite_cost) if previous_expedite_cost is not None else None
-                ),
-            },
-            new_value={
-                "purchaseOrderId": purchase_order.purchase_order_code,
-                "mitigationPlanId": mitigation_plan.mitigation_code,
-                "expectedDeliveryDate": purchase_order.expected_delivery_date.isoformat(),
-                "expedited": purchase_order.expedited,
-                "expediteCost": (
-                    str(purchase_order.expedite_cost)
-                    if purchase_order.expedite_cost is not None
-                    else None
-                ),
-            },
-            reason=reason,
-            created_at=context.executed_at,
-        )
+    AuditRepository(context.session).create_audit_log(
+        actor_user_id=_try_parse_uuid(context.actor.actor_id),
+        execution_id=context.execution_id,
+        action_type="expeditePurchaseOrder",
+        object_type="purchase_order",
+        object_id=purchase_order.id,
+        previous_value={
+            "purchaseOrderId": purchase_order.purchase_order_code,
+            "expectedDeliveryDate": previous_expected_delivery_date.isoformat(),
+            "expedited": previous_expedited,
+            "expediteCost": (
+                str(previous_expedite_cost) if previous_expedite_cost is not None else None
+            ),
+        },
+        new_value={
+            "purchaseOrderId": purchase_order.purchase_order_code,
+            "mitigationPlanId": mitigation_plan.mitigation_code,
+            "expectedDeliveryDate": purchase_order.expected_delivery_date.isoformat(),
+            "expedited": purchase_order.expedited,
+            "expediteCost": (
+                str(purchase_order.expedite_cost)
+                if purchase_order.expedite_cost is not None
+                else None
+            ),
+        },
+        reason=reason,
     )
 
 
@@ -526,29 +524,27 @@ def _record_mitigation_step_audit(
     purchase_order_id: str,
     reason: str,
 ) -> None:
-    context.session.add(
-        AuditLog(
-            actor_user_id=_try_parse_uuid(context.actor.actor_id),
-            action_type="expeditePurchaseOrder",
-            object_type="mitigation_plan_step",
-            object_id=mitigation_step.id,
-            previous_value={
-                "mitigationPlanId": mitigation_plan.mitigation_code,
-                "mitigationStepId": str(mitigation_step.id),
-                "purchaseOrderId": purchase_order_id,
-                "status": PENDING_STEP_STATUS,
-                "executedAt": None,
-            },
-            new_value={
-                "mitigationPlanId": mitigation_plan.mitigation_code,
-                "mitigationStepId": str(mitigation_step.id),
-                "purchaseOrderId": purchase_order_id,
-                "status": mitigation_step.status,
-                "executedAt": mitigation_step.executed_at.isoformat(),
-            },
-            reason=reason,
-            created_at=context.executed_at,
-        )
+    AuditRepository(context.session).create_audit_log(
+        actor_user_id=_try_parse_uuid(context.actor.actor_id),
+        execution_id=context.execution_id,
+        action_type="expeditePurchaseOrder",
+        object_type="mitigation_plan_step",
+        object_id=mitigation_step.id,
+        previous_value={
+            "mitigationPlanId": mitigation_plan.mitigation_code,
+            "mitigationStepId": str(mitigation_step.id),
+            "purchaseOrderId": purchase_order_id,
+            "status": PENDING_STEP_STATUS,
+            "executedAt": None,
+        },
+        new_value={
+            "mitigationPlanId": mitigation_plan.mitigation_code,
+            "mitigationStepId": str(mitigation_step.id),
+            "purchaseOrderId": purchase_order_id,
+            "status": mitigation_step.status,
+            "executedAt": mitigation_step.executed_at.isoformat(),
+        },
+        reason=reason,
     )
 
 

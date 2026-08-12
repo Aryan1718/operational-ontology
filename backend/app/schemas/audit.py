@@ -17,6 +17,7 @@ class AuditLogSummary(ApiBaseModel):
     audit_log_id: UUID = Field(alias="auditLogId")
     action_type_id: str = Field(alias="actionTypeId")
     actor_id: UUID | None = Field(alias="actorId", default=None)
+    execution_id: str | None = Field(alias="executionId", default=None)
     object_type: str = Field(alias="objectType")
     object_id: UUID = Field(alias="objectId")
     previous_value: dict[str, Any] | None = Field(alias="previousValue", default=None)

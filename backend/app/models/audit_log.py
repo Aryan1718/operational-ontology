@@ -31,6 +31,7 @@ class AuditLog(UUIDPrimaryKeyMixin, Base):
     )
 
     actor_user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    execution_id: Mapped[str | None] = mapped_column(Text)
     action_type: Mapped[str] = mapped_column(Text, nullable=False)
     object_type: Mapped[str] = mapped_column(Text, nullable=False)
     object_id: Mapped[UUID] = mapped_column(nullable=False)

@@ -127,6 +127,7 @@ def _build_audit_log_summary(audit_log: AuditLog) -> AuditLogSummary:
         auditLogId=audit_log.id,
         actionTypeId=audit_log.action_type,
         actorId=audit_log.actor_user_id,
+        executionId=audit_log.execution_id,
         objectType=audit_log.object_type,
         objectId=audit_log.object_id,
         previousValue=audit_log.previous_value,
