@@ -120,6 +120,19 @@ class ActionExecutionRepository:
             has_more=has_more,
         )
 
+    def search_execution_summaries(
+        self,
+        *,
+        filters: ActionExecutionListFilters,
+    ) -> list[ActionExecution]:
+        statement = select(ActionExecution)
+        statement = self._apply_list_filters(statement, filters)
+        statement = statement.order_by(
+            ActionExecution.started_at.desc(),
+            ActionExecution.execution_id.desc(),
+        )
+        return list(self._session.execute(statement).scalars().all())
+
     def mark_succeeded(
         self,
         *,

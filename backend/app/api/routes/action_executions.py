@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import (
@@ -33,6 +33,7 @@ from app.schemas.actions import (
     ActionExecutionActorSummary,
     ActionExecutionDetailResponse,
     ActionExecutionListResponse,
+    ActionExecutionSearchRequest,
     ActionExecutionSummary,
 )
 from app.schemas.audit import AuditLogListResponse, AuditLogSummary
@@ -94,6 +95,39 @@ def list_action_executions(
         next_cursor=None,
         has_more=page.has_more,
     )
+
+
+@router.post(
+    "/search",
+    response_model=SuccessResponse[ActionExecutionListResponse],
+    responses={
+        401: {"model": ApiErrorResponse},
+        403: {"model": ApiErrorResponse},
+        422: {"model": ApiErrorResponse},
+        500: {"model": ApiErrorResponse},
+    },
+)
+def search_action_executions(
+    request: Request,
+    session: DbSessionDependency,
+    actor: ActorContextDependency,
+    authorization_service: AuthorizationServiceDependency,
+    search_request: Annotated[ActionExecutionSearchRequest, Body()],
+) -> SuccessResponse[ActionExecutionListResponse]:
+    """Return action execution history matching the supplied filters."""
+    _authorize_action_execution_history(actor, authorization_service)
+    executions = ActionExecutionRepository(session).search_execution_summaries(
+        filters=ActionExecutionListFilters(
+            action_type_id=search_request.action_type_id,
+            status=search_request.status,
+            actor_id=search_request.actor_id,
+            parent_execution_id=search_request.parent_execution_id,
+        )
+    )
+    payload = ActionExecutionListResponse(
+        executions=[_build_execution_summary(execution) for execution in executions],
+    )
+    return build_success_response(request, payload)
 
 
 @router.get(

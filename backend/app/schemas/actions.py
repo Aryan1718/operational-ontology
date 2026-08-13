@@ -56,6 +56,27 @@ class ActionExecutionListResponse(ApiBaseModel):
     executions: list[ActionExecutionSummary] = Field(default_factory=list)
 
 
+class ActionExecutionSearchRequest(ApiBaseModel):
+    """Structured action execution history search request."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    action_type_id: str | None = Field(alias="actionTypeId", default=None)
+    status: str | None = None
+    actor_id: str | None = Field(alias="actorId", default=None)
+    parent_execution_id: str | None = Field(alias="parentExecutionId", default=None)
+
+    @field_validator("action_type_id", "status", "actor_id", "parent_execution_id")
+    @classmethod
+    def _validate_optional_string_filter(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Filter values must not be empty.")
+        return normalized
+
+
 class ActionExecutionDetailResponse(ApiBaseModel):
     """One persisted governed action execution."""
 
