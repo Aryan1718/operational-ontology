@@ -55,6 +55,16 @@ class ActionExecutionListFilters:
     started_at_to: datetime | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ActionExecutionSearchPage:
+    """Paginated action execution search results."""
+
+    records: list[ActionExecution]
+    total: int
+    limit: int
+    offset: int
+
+
 class ActionExecutionRepository:
     """Persist and retrieve action execution rows inside the caller transaction."""
 
@@ -128,14 +138,23 @@ class ActionExecutionRepository:
         self,
         *,
         filters: ActionExecutionListFilters,
-    ) -> list[ActionExecution]:
-        statement = select(ActionExecution)
-        statement = self._apply_list_filters(statement, filters)
-        statement = statement.order_by(
+        limit: int,
+        offset: int,
+    ) -> ActionExecutionSearchPage:
+        filtered_statement = self._apply_list_filters(select(ActionExecution), filters)
+        total = self._count_filtered_executions(filtered_statement)
+        statement = filtered_statement.order_by(
             ActionExecution.started_at.desc(),
             ActionExecution.execution_id.desc(),
         )
-        return list(self._session.execute(statement).scalars().all())
+        statement = statement.offset(offset).limit(limit)
+        records = list(self._session.execute(statement).scalars().all())
+        return ActionExecutionSearchPage(
+            records=records,
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
 
     def mark_succeeded(
         self,
@@ -228,6 +247,13 @@ class ActionExecutionRepository:
         if filters.started_at_to is not None:
             statement = statement.where(ActionExecution.started_at <= filters.started_at_to)
         return statement
+
+    def _count_filtered_executions(
+        self,
+        statement: Select[tuple[ActionExecution]],
+    ) -> int:
+        count_statement = select(func.count()).select_from(statement.order_by(None).subquery())
+        return int(self._session.execute(count_statement).scalar_one())
 
     def _normalize_affected_objects(
         self,

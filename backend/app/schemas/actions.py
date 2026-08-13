@@ -69,6 +69,8 @@ class ActionExecutionSearchRequest(ApiBaseModel):
     object_id: str | None = Field(alias="objectId", default=None)
     started_at_from: datetime | None = Field(alias="startedAtFrom", default=None)
     started_at_to: datetime | None = Field(alias="startedAtTo", default=None)
+    limit: int = Field(default=50, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
 
     @field_validator(
         "action_type_id",
@@ -96,6 +98,15 @@ class ActionExecutionSearchRequest(ApiBaseModel):
         ):
             raise ValueError("startedAtFrom must be less than or equal to startedAtTo.")
         return self
+
+
+class ActionExecutionSearchResponse(ApiBaseModel):
+    """Paginated action execution search response payload."""
+
+    items: list[ActionExecutionSummary] = Field(default_factory=list)
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0)
 
 
 class ActionExecutionDetailResponse(ApiBaseModel):

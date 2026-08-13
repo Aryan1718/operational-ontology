@@ -34,6 +34,7 @@ from app.schemas.actions import (
     ActionExecutionDetailResponse,
     ActionExecutionListResponse,
     ActionExecutionSearchRequest,
+    ActionExecutionSearchResponse,
     ActionExecutionSummary,
 )
 from app.schemas.audit import AuditLogListResponse, AuditLogSummary
@@ -99,7 +100,7 @@ def list_action_executions(
 
 @router.post(
     "/search",
-    response_model=SuccessResponse[ActionExecutionListResponse],
+    response_model=SuccessResponse[ActionExecutionSearchResponse],
     responses={
         401: {"model": ApiErrorResponse},
         403: {"model": ApiErrorResponse},
@@ -113,10 +114,10 @@ def search_action_executions(
     actor: ActorContextDependency,
     authorization_service: AuthorizationServiceDependency,
     search_request: Annotated[ActionExecutionSearchRequest, Body()],
-) -> SuccessResponse[ActionExecutionListResponse]:
+) -> SuccessResponse[ActionExecutionSearchResponse]:
     """Return action execution history matching the supplied filters."""
     _authorize_action_execution_history(actor, authorization_service)
-    executions = ActionExecutionRepository(session).search_execution_summaries(
+    page = ActionExecutionRepository(session).search_execution_summaries(
         filters=ActionExecutionListFilters(
             action_type_id=search_request.action_type_id,
             status=search_request.status,
@@ -126,10 +127,15 @@ def search_action_executions(
             object_id=search_request.object_id,
             started_at_from=search_request.started_at_from,
             started_at_to=search_request.started_at_to,
-        )
+        ),
+        limit=search_request.limit,
+        offset=search_request.offset,
     )
-    payload = ActionExecutionListResponse(
-        executions=[_build_execution_summary(execution) for execution in executions],
+    payload = ActionExecutionSearchResponse(
+        items=[_build_execution_summary(execution) for execution in page.records],
+        total=page.total,
+        limit=page.limit,
+        offset=page.offset,
     )
     return build_success_response(request, payload)
 
