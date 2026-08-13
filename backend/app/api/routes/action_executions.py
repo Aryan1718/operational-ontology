@@ -122,6 +122,10 @@ def search_action_executions(
             status=search_request.status,
             actor_id=search_request.actor_id,
             parent_execution_id=search_request.parent_execution_id,
+            object_type=search_request.object_type,
+            object_id=search_request.object_id,
+            started_at_from=search_request.started_at_from,
+            started_at_to=search_request.started_at_to,
         )
     )
     payload = ActionExecutionListResponse(

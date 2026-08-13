@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from app.models.action_execution import ActionExecutionInvocationMode, ActionExecutionStatus
 from app.schemas.common import ApiBaseModel
@@ -65,8 +65,19 @@ class ActionExecutionSearchRequest(ApiBaseModel):
     status: str | None = None
     actor_id: str | None = Field(alias="actorId", default=None)
     parent_execution_id: str | None = Field(alias="parentExecutionId", default=None)
+    object_type: str | None = Field(alias="objectType", default=None)
+    object_id: str | None = Field(alias="objectId", default=None)
+    started_at_from: datetime | None = Field(alias="startedAtFrom", default=None)
+    started_at_to: datetime | None = Field(alias="startedAtTo", default=None)
 
-    @field_validator("action_type_id", "status", "actor_id", "parent_execution_id")
+    @field_validator(
+        "action_type_id",
+        "status",
+        "actor_id",
+        "parent_execution_id",
+        "object_type",
+        "object_id",
+    )
     @classmethod
     def _validate_optional_string_filter(cls, value: str | None) -> str | None:
         if value is None:
@@ -75,6 +86,16 @@ class ActionExecutionSearchRequest(ApiBaseModel):
         if not normalized:
             raise ValueError("Filter values must not be empty.")
         return normalized
+
+    @model_validator(mode="after")
+    def _validate_started_at_range(self) -> "ActionExecutionSearchRequest":
+        if (
+            self.started_at_from is not None
+            and self.started_at_to is not None
+            and self.started_at_from > self.started_at_to
+        ):
+            raise ValueError("startedAtFrom must be less than or equal to startedAtTo.")
+        return self
 
 
 class ActionExecutionDetailResponse(ApiBaseModel):

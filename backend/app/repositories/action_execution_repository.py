@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ApplicationError
@@ -49,6 +49,10 @@ class ActionExecutionListFilters:
     actor_id: str | None = None
     invocation_mode: str | None = None
     parent_execution_id: str | None = None
+    object_type: str | None = None
+    object_id: str | None = None
+    started_at_from: datetime | None = None
+    started_at_to: datetime | None = None
 
 
 class ActionExecutionRepository:
@@ -217,6 +221,12 @@ class ActionExecutionRepository:
             statement = statement.where(
                 ActionExecution.parent_execution_id == filters.parent_execution_id
             )
+        if filters.object_type is not None or filters.object_id is not None:
+            statement = statement.where(_build_affected_object_filter(filters))
+        if filters.started_at_from is not None:
+            statement = statement.where(ActionExecution.started_at >= filters.started_at_from)
+        if filters.started_at_to is not None:
+            statement = statement.where(ActionExecution.started_at <= filters.started_at_to)
         return statement
 
     def _normalize_affected_objects(
@@ -297,3 +307,29 @@ def _normalize_actor_role(actor_role: OntologyRole | str) -> str:
     if isinstance(actor_role, OntologyRole):
         return actor_role.value
     return actor_role
+
+
+def _build_affected_object_filter(filters: ActionExecutionListFilters):
+    path_parts = ["$[*] ? ("]
+    variable_bindings: dict[str, str] = {}
+    conditions: list[str] = []
+
+    if filters.object_type is not None:
+        conditions.append("@.objectType == $object_type")
+        variable_bindings["object_type"] = filters.object_type
+    if filters.object_id is not None:
+        conditions.append("@.objectId == $object_id")
+        variable_bindings["object_id"] = filters.object_id
+
+    path_parts.append(" && ".join(conditions))
+    path_parts.append(")")
+    jsonpath = "".join(path_parts)
+
+    return and_(
+        ActionExecution.affected_objects.is_not(None),
+        func.jsonb_path_exists(
+            ActionExecution.affected_objects,
+            jsonpath,
+            func.jsonb_build_object(*sum(([key, value] for key, value in variable_bindings.items()), [])),
+        ),
+    )
