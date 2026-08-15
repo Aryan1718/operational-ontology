@@ -1,4 +1,5 @@
 import { appConfig } from "@/lib/config";
+import type { ApiSuccessEnvelope } from "@/lib/api/types";
 
 type RequestInitWithJson = RequestInit & {
   json?: unknown;
@@ -28,4 +29,12 @@ export async function apiRequest<T>(
   }
 
   return (await response.json()) as T;
+}
+
+export async function apiRequestData<T>(
+  path: string,
+  init?: RequestInitWithJson,
+): Promise<T> {
+  const envelope = await apiRequest<ApiSuccessEnvelope<T>>(path, init);
+  return envelope.data;
 }

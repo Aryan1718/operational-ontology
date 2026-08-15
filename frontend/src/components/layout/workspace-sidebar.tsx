@@ -26,7 +26,7 @@ const NAVIGATION: NavigationEntry[] = [
     href: "/action-executions",
     label: "Executions",
     code: "05",
-    available: false,
+    available: true,
   },
   { href: "/audit", label: "Audit Trail", code: "06", available: false },
 ];
