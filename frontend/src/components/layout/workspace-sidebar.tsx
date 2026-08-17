@@ -28,7 +28,7 @@ const NAVIGATION: NavigationEntry[] = [
     code: "05",
     available: true,
   },
-  { href: "/audit", label: "Audit Trail", code: "06", available: false },
+  { href: "/audit", label: "Audit Trail", code: "06", available: true },
 ];
 
 function NavigationItem({
