@@ -12,9 +12,11 @@ from app.api.dependencies import get_link_runtime
 from app.core.exceptions import InvalidOntologyMappingError, LinkNotFoundError
 from app.db.seed import _seed_uuid
 from app.main import create_application
+from app.ontology.actor_context import ActorContext, ActorType, InvocationSource, OntologyRole
 from app.ontology.loader import load_ontology_registry
 from app.ontology.registry import OntologyRegistry
 from app.repositories.object_repository import ObjectRepository, ResolvedObjectMapping
+from app.runtime.authorization_service import AuthorizationService
 from app.runtime.link_runtime import LinkRuntime
 from app.runtime.object_runtime import ObjectRuntime
 from app.schemas.ontology import OntologyLinkTypeDefinition, OntologyObjectTypeDefinition
@@ -113,6 +115,15 @@ class _SourceModel:
 
 class _TargetModel:
     pass
+
+
+def _build_actor_context() -> ActorContext:
+    return ActorContext(
+        actor_id="test-viewer",
+        actor_type=ActorType.HUMAN,
+        roles=(OntologyRole.VIEWER,),
+        invocation_source=InvocationSource.API,
+    )
 
 
 def _stored_property(source_column: str) -> dict[str, object]:
@@ -248,6 +259,7 @@ def _runtime_for_synthetic_link(
         registry=registry,
         repository=cast(ObjectRepository, repository),
         object_runtime=object_runtime,
+        authorization_service=AuthorizationService(load_ontology_registry().permission_registry),
     )
     return runtime, repository
 
@@ -262,7 +274,9 @@ def test_link_route_delegates_to_runtime() -> None:
             object_type: str,
             object_id: str,
             link_type: str,
+            actor: object,
         ) -> dict[str, object]:
+            del actor
             calls.append((object_type, object_id, link_type))
             return {
                 "source": {"objectType": object_type, "objectId": object_id},
@@ -329,7 +343,12 @@ def test_link_runtime_rejects_link_with_source_mismatch_even_if_declared() -> No
     )
 
     try:
-        runtime.get_linked_objects("SyntheticSource", "SRC-1", "syntheticLink")
+        runtime.get_linked_objects(
+            "SyntheticSource",
+            "SRC-1",
+            "syntheticLink",
+            _build_actor_context(),
+        )
     except LinkNotFoundError as exc:
         assert exc.code == "LINK_NOT_FOUND"
         assert exc.details == {"objectType": "SyntheticSource", "linkType": "syntheticLink"}

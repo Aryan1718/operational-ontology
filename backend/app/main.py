@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -24,8 +25,11 @@ from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ApplicationError, AuthorizationDeniedError
 from app.core.logging import configure_logging
+from app.db.session import get_session_factory
 from app.mcp import build_http_identity_resolver, build_mcp_http_app, create_mcp_server
+from app.mcp.ontology_tool_gateway import OntologyToolGateway
 from app.ontology.loader import load_ontology_registry
+from app.ontology.registry import OntologyRegistry
 from app.runtime.action_registry import build_action_handler_registry
 from app.runtime.authorization_service import AuthorizationService
 from app.runtime.function_registry import build_function_handler_registry
@@ -166,10 +170,24 @@ def _register_exception_handlers(application: FastAPI) -> None:
         return build_internal_error_response(request)
 
 
+def _build_http_mcp_gateway(application: FastAPI) -> OntologyToolGateway:
+    return OntologyToolGateway(
+        session_factory=get_session_factory(),
+        registry_provider=lambda: cast(OntologyRegistry, application.state.ontology_registry),
+        authorization_service_provider=lambda: cast(
+            AuthorizationService,
+            application.state.authorization_service,
+        ),
+    )
+
+
 def _configure_mcp(application: FastAPI, settings: Settings) -> None:
     """Attach the shared MCP server to FastAPI when remote mode is enabled."""
     application.state.mcp_remote_enabled = settings.mcp_remote_enabled
-    mcp_server = create_mcp_server(settings)
+    mcp_server = create_mcp_server(
+        settings,
+        ontology_tool_gateway=_build_http_mcp_gateway(application),
+    )
     application.state.mcp_server = mcp_server
     application.state.mcp_http_identity_resolver = build_http_identity_resolver(settings)
 
