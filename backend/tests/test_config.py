@@ -51,3 +51,25 @@ def test_settings_prefer_database_url_override(
     assert settings.database_health_port == 5439
     assert settings.database_health_name == "override_db"
     get_settings.cache_clear()
+
+
+def test_settings_include_mcp_foundation_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MCP settings should load through the shared configuration system."""
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("MCP_REMOTE_ENABLED", "true")
+    monkeypatch.setenv("MCP_SERVER_URL", "https://example.test/mcp")
+    monkeypatch.setenv("MCP_TOKEN_AUDIENCE", "ontology-mcp")
+    monkeypatch.setenv("MCP_STDIO_DEV_IDENTITY_ENABLED", "false")
+    get_settings.cache_clear()
+
+    settings = Settings()
+
+    assert settings.is_production is True
+    assert settings.mcp_remote_enabled is True
+    assert settings.mcp_server_url == "https://example.test/mcp"
+    assert settings.mcp_token_audience == "ontology-mcp"
+    assert settings.mcp_stdio_dev_identity_enabled is False
+    assert settings.mcp_dev_actor_id == "ontology-assistant"
+    get_settings.cache_clear()

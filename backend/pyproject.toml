@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.14.0",
   "fastapi>=0.115.0",
-  "mcp>=1.12.0",
+  "mcp==1.12.0",
   "PyYAML>=6.0.2",
   "psycopg[binary]>=3.2.0",
   "pydantic-settings>=2.6.0",
@@ -46,5 +46,7 @@ python_version = "3.12"
 strict = true
 plugins = []
 exclude = ["migrations/versions"]
+
 [project.scripts]
 ontology-seed = "app.db.seed:main"
+ontology-mcp-stdio = "app.mcp.stdio:main"

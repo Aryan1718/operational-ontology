@@ -21,9 +21,10 @@ from app.api.response_contract import (
     store_request_id,
 )
 from app.api.router import api_router
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.exceptions import ApplicationError, AuthorizationDeniedError
 from app.core.logging import configure_logging
+from app.mcp import build_http_identity_resolver, build_mcp_http_app, create_mcp_server
 from app.ontology.loader import load_ontology_registry
 from app.runtime.action_registry import build_action_handler_registry
 from app.runtime.authorization_service import AuthorizationService
@@ -81,7 +82,18 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     application.state.action_handler_registry = action_handler_registry
     _validate_registered_function_handlers(application)
     _validate_registered_action_handlers(application)
-    yield
+
+    if not getattr(application.state, "mcp_remote_enabled", False):
+        yield
+        return
+
+    mcp_server = getattr(application.state, "mcp_server", None)
+    if mcp_server is None:
+        yield
+        return
+
+    async with mcp_server.session_manager.run():
+        yield
 
 
 def _register_request_id_middleware(application: FastAPI) -> None:
@@ -154,6 +166,25 @@ def _register_exception_handlers(application: FastAPI) -> None:
         return build_internal_error_response(request)
 
 
+def _configure_mcp(application: FastAPI, settings: Settings) -> None:
+    """Attach the shared MCP server to FastAPI when remote mode is enabled."""
+    application.state.mcp_remote_enabled = settings.mcp_remote_enabled
+    mcp_server = create_mcp_server(settings)
+    application.state.mcp_server = mcp_server
+    application.state.mcp_http_identity_resolver = build_http_identity_resolver(settings)
+
+    if not settings.mcp_remote_enabled:
+        return
+
+    application.mount(
+        "/mcp",
+        build_mcp_http_app(
+            mcp_server,
+            application.state.mcp_http_identity_resolver,
+        ),
+    )
+
+
 def create_application() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
@@ -171,6 +202,7 @@ def create_application() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    _configure_mcp(application, settings)
     _register_request_id_middleware(application)
     _register_exception_handlers(application)
     application.include_router(api_router)

@@ -27,6 +27,17 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000"],
         alias="BACKEND_CORS_ORIGINS",
     )
+    mcp_remote_enabled: bool = Field(default=False, alias="MCP_REMOTE_ENABLED")
+    mcp_server_url: str | None = Field(default=None, alias="MCP_SERVER_URL")
+    mcp_token_audience: str | None = Field(default=None, alias="MCP_TOKEN_AUDIENCE")
+    mcp_stdio_dev_identity_enabled: bool = Field(
+        default=False,
+        alias="MCP_STDIO_DEV_IDENTITY_ENABLED",
+    )
+    mcp_dev_actor_id: str = Field(
+        default="ontology-assistant",
+        alias="MCP_DEV_ACTOR_ID",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -86,6 +97,11 @@ class Settings(BaseSettings):
         """Return the configured database name for health output."""
         path = self.parsed_database_url.path.lstrip("/")
         return path or self.database_name
+
+    @property
+    def is_production(self) -> bool:
+        """Return whether the application is running in production mode."""
+        return self.app_env.lower() == "production"
 
 
 @lru_cache
