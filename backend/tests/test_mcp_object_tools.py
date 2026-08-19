@@ -252,7 +252,7 @@ def test_http_and_stdio_share_the_same_three_registered_tools() -> None:
 
     tools = asyncio.run(server.list_tools())
 
-    assert [tool.name for tool in tools] == ["searchObjects", "getObject", "getLinkedObjects"]
+    assert [tool.name for tool in tools] == ["searchObjects", "getObject", "getLinkedObjects", "findImpactedParts", "findImpactedProducts", "findImpactedOrders", "calculateStockoutRisk", "getInventoryAvailability", "findAlternativeWarehouses", "findExpeditablePurchaseOrders", "rankImpactedOrders", "recommendMitigationPlan"]
 
 
 def test_mcp_get_object_tool_returns_structured_supplier_result() -> None:
@@ -341,3 +341,4 @@ def test_mcp_get_linked_objects_tool_returns_unknown_link_type_error() -> None:
             tool_name="getLinkedObjects",
             arguments={"payload": {"objectType": "Supplier", "objectId": "S-102", "linkType": "unknownLink"}},
         )
+

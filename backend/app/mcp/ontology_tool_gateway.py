@@ -1,14 +1,16 @@
-"""Thin MCP-facing gateway over the existing ontology object and link runtimes."""
+"""Thin MCP-facing gateway over the existing ontology runtimes."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.exceptions import ObjectTypeNotFoundError
 from app.db.session import get_session_factory
 from app.ontology.actor_context import (
     ActorContext,
@@ -17,11 +19,12 @@ from app.ontology.actor_context import (
     AuthorizationResource,
     AuthorizationResourceType,
 )
-from app.core.exceptions import ObjectTypeNotFoundError
 from app.ontology.loader import load_ontology_registry
 from app.ontology.registry import OntologyRegistry
 from app.repositories.object_repository import ObjectRepository
 from app.runtime.authorization_service import AuthorizationService
+from app.runtime.function_engine import FunctionEngine
+from app.runtime.function_registry import build_function_handler_registry
 from app.runtime.link_runtime import LinkRuntime
 from app.runtime.object_runtime import ObjectRuntime
 from app.schemas.objects import (
@@ -110,6 +113,14 @@ class GetLinkedObjectsToolResult(BaseModel):
         )
 
 
+class FunctionToolResult(BaseModel):
+    """Structured MCP result for one ontology function execution."""
+
+    functionName: str
+    result: Any
+    warnings: list[str] = Field(default_factory=list)
+
+
 @dataclass(frozen=True)
 class OntologyToolGateway:
     """Narrow MCP-facing adapter over the existing ontology runtimes."""
@@ -179,6 +190,26 @@ class OntologyToolGateway:
             )
         return GetLinkedObjectsToolResult.from_linked_objects_response(response)
 
+    def execute_function(
+        self,
+        *,
+        actor: ActorContext,
+        function_name: str,
+        payload: BaseModel,
+    ) -> FunctionToolResult:
+        """Execute one existing read-only ontology function through FunctionEngine."""
+        with self.session_factory() as session:
+            engine = self._build_function_engine(session)
+            executed = engine.execute(
+                actor=actor,
+                function_name=function_name,
+                raw_parameters=payload.model_dump(mode="python", by_alias=True),
+                request_id="mcp-tool-call",
+            )
+        return FunctionToolResult.model_validate(
+            executed.payload.model_dump(mode="python", by_alias=True)
+        )
+
     def _build_object_runtime(self, session: Session) -> ObjectRuntime:
         registry = self.registry_provider()
         return ObjectRuntime(
@@ -198,6 +229,14 @@ class OntologyToolGateway:
             repository=repository,
             object_runtime=object_runtime,
             authorization_service=self.authorization_service_provider(),
+        )
+
+    def _build_function_engine(self, session: Session) -> FunctionEngine:
+        return FunctionEngine(
+            registry=self.registry_provider(),
+            authorization_service=self.authorization_service_provider(),
+            handler_registry=build_function_handler_registry(),
+            session=session,
         )
 
     def _authorize_object_capability(
@@ -240,4 +279,3 @@ def build_default_ontology_tool_gateway() -> OntologyToolGateway:
         registry_provider=_get_default_registry,
         authorization_service_provider=_get_default_authorization_service,
     )
-
