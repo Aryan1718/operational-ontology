@@ -23,10 +23,16 @@ from app.ontology.loader import load_ontology_registry
 from app.ontology.registry import OntologyRegistry
 from app.repositories.object_repository import ObjectRepository
 from app.runtime.authorization_service import AuthorizationService
+from app.runtime.action_engine import ActionEngine
+from app.runtime.action_registry import build_action_handler_registry
 from app.runtime.function_engine import FunctionEngine
 from app.runtime.function_registry import build_function_handler_registry
 from app.runtime.link_runtime import LinkRuntime
 from app.runtime.object_runtime import ObjectRuntime
+from app.schemas.actions import (
+    ActionExecutionResponse,
+    GenerateMitigationPlanParameters,
+)
 from app.schemas.objects import (
     LinkedObjectsResponse,
     ObjectSearchFilter,
@@ -121,6 +127,31 @@ class FunctionToolResult(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class GenerateMitigationPlanToolResult(BaseModel):
+    """Structured MCP result for the governed draft-plan action tool."""
+
+    executionId: str
+    actionTypeId: str
+    status: str
+    result: Any
+    warnings: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def from_action_execution(
+        cls,
+        *,
+        execution_id: str,
+        response: ActionExecutionResponse,
+    ) -> "GenerateMitigationPlanToolResult":
+        return cls(
+            executionId=execution_id,
+            actionTypeId=response.action_name,
+            status="succeeded",
+            result=response.result,
+            warnings=response.warnings,
+        )
+
+
 @dataclass(frozen=True)
 class OntologyToolGateway:
     """Narrow MCP-facing adapter over the existing ontology runtimes."""
@@ -210,6 +241,27 @@ class OntologyToolGateway:
             executed.payload.model_dump(mode="python", by_alias=True)
         )
 
+    def execute_generate_mitigation_plan(
+        self,
+        *,
+        actor: ActorContext,
+        payload: GenerateMitigationPlanParameters,
+        request_id: str,
+    ) -> GenerateMitigationPlanToolResult:
+        """Execute the one approved governed mutation tool through ActionEngine."""
+        with self.session_factory() as session:
+            engine = self._build_action_engine(session)
+            executed = engine.execute(
+                actor=actor,
+                action_name="generateMitigationPlan",
+                raw_parameters=payload.model_dump(mode="python", by_alias=True),
+                request_id=request_id,
+            )
+        return GenerateMitigationPlanToolResult.from_action_execution(
+            execution_id=request_id,
+            response=executed.payload,
+        )
+
     def _build_object_runtime(self, session: Session) -> ObjectRuntime:
         registry = self.registry_provider()
         return ObjectRuntime(
@@ -236,6 +288,15 @@ class OntologyToolGateway:
             registry=self.registry_provider(),
             authorization_service=self.authorization_service_provider(),
             handler_registry=build_function_handler_registry(),
+            session=session,
+        )
+
+    def _build_action_engine(self, session: Session) -> ActionEngine:
+        return ActionEngine(
+            registry=self.registry_provider(),
+            authorization_service=self.authorization_service_provider(),
+            handler_registry=build_action_handler_registry(),
+            function_handler_registry=build_function_handler_registry(),
             session=session,
         )
 

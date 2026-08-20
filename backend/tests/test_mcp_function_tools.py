@@ -160,6 +160,7 @@ EXPECTED_TOOL_NAMES = [
     "getObject",
     "getLinkedObjects",
     *[definition.name for definition in FUNCTION_TOOL_DEFINITIONS],
+    "generateMitigationPlan",
 ]
 
 

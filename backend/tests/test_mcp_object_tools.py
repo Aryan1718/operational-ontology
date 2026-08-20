@@ -252,7 +252,7 @@ def test_http_and_stdio_share_the_same_three_registered_tools() -> None:
 
     tools = asyncio.run(server.list_tools())
 
-    assert [tool.name for tool in tools] == ["searchObjects", "getObject", "getLinkedObjects", "findImpactedParts", "findImpactedProducts", "findImpactedOrders", "calculateStockoutRisk", "getInventoryAvailability", "findAlternativeWarehouses", "findExpeditablePurchaseOrders", "rankImpactedOrders", "recommendMitigationPlan"]
+    assert [tool.name for tool in tools] == ["searchObjects", "getObject", "getLinkedObjects", "findImpactedParts", "findImpactedProducts", "findImpactedOrders", "calculateStockoutRisk", "getInventoryAvailability", "findAlternativeWarehouses", "findExpeditablePurchaseOrders", "rankImpactedOrders", "recommendMitigationPlan", "generateMitigationPlan"]
 
 
 def test_mcp_get_object_tool_returns_structured_supplier_result() -> None:

@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -17,6 +18,7 @@ from app.mcp.ontology_tool_gateway import (
     SearchObjectsToolInput,
     build_default_ontology_tool_gateway,
 )
+from app.schemas.actions import GenerateMitigationPlanParameters
 from app.schemas.functions import (
     CalculateStockoutRiskParameters,
     FindAlternativeWarehousesParameters,
@@ -101,9 +103,10 @@ def get_mcp_server_definition() -> McpServerDefinition:
     return McpServerDefinition(
         name="Operational Ontology",
         instructions=(
-            "Operational Ontology MCP foundation. Phase 3 exposes read-only object "
-            "search, object retrieval, declared link traversal, and approved ontology "
-            "function execution through the shared runtime and authorization service."
+            "Operational Ontology MCP server. Phase 4 exposes read-only object "
+            "search, object retrieval, declared link traversal, approved ontology "
+            "function execution, and the single governed draft action "
+            "generateMitigationPlan through the shared runtime and authorization service."
         ),
     )
 
@@ -179,6 +182,25 @@ def create_mcp_server(
     for definition in FUNCTION_TOOL_DEFINITIONS:
         _register_function_tool(server=server, gateway=gateway, definition=definition)
 
+    @server.tool(
+        name="generateMitigationPlan",
+        description=(
+            "Create a governed draft mitigation plan for an existing risk event using "
+            "the existing ActionEngine. This tool does not approve, execute, or trigger "
+            "downstream operational actions."
+        ),
+    )
+    def generate_mitigation_plan(payload: GenerateMitigationPlanParameters) -> dict[str, object]:
+        actor = _require_current_mcp_actor()
+        try:
+            return gateway.execute_generate_mitigation_plan(
+                actor=actor,
+                payload=payload,
+                request_id=_build_tool_request_id("generateMitigationPlan"),
+            ).model_dump(mode="json", by_alias=True)
+        except ApplicationError as exc:
+            raise _tool_error_from_application_error(exc) from exc
+
     return server
 
 
@@ -200,6 +222,10 @@ def _register_function_tool(
         except ApplicationError as exc:
             raise _tool_error_from_application_error(exc) from exc
 
+
+
+def _build_tool_request_id(tool_name: str) -> str:
+    return f"mcp-{tool_name}-{uuid4()}"
 
 def _require_current_mcp_actor():
     actor = get_current_mcp_actor()

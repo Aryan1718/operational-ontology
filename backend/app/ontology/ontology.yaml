@@ -2987,9 +2987,9 @@ permissions:
     - capability: action.execute
       resourceType: action
       resourceKey: generateMitigationPlan
-      allowedRoles: [Planner, Admin]
-      allowedActorTypes: [human, service]
-      allowedInvocationSources: [web_app, api, internal]
+      allowedRoles: [Planner, Admin, AIAgent]
+      allowedActorTypes: [human, ai_agent, service]
+      allowedInvocationSources: [web_app, api, mcp, ai_workflow, internal]
     - capability: action.execute
       resourceType: action
       resourceKey: approveMitigationPlan
