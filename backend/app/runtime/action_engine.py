@@ -27,6 +27,8 @@ from app.ontology.actor_context import (
     TrustedAuthorizationContext,
 )
 from app.ontology.registry import OntologyRegistry
+from app.repositories.action_execution_repository import ActionExecutionRepository
+from app.models.action_execution import ActionExecutionInvocationMode
 from app.runtime.authorization_service import AuthorizationService
 from app.schemas.actions import ActionExecutionResponse
 
@@ -228,8 +230,19 @@ class ActionEngine:
             input_model=registered_handler.input_model,
             raw_parameters=raw_parameters,
         )
-        execution_id = request_id
+        execution_id = request_id if invocation_mode == "external" else str(uuid4())
         resolved_executed_at = executed_at or datetime.now(UTC)
+        repository = ActionExecutionRepository(self._session)
+        self._create_started_execution(
+            repository=repository,
+            execution_id=execution_id,
+            action_name=action_name,
+            invocation_mode=invocation_mode,
+            parent_execution_id=parent_execution_id,
+            actor=actor,
+            reason=self._extract_reason(parameters),
+            started_at=resolved_executed_at,
+        )
         context = ActionExecutionContext(
             session=self._session,
             registry=self._registry,
@@ -257,16 +270,42 @@ class ActionEngine:
             else:
                 with self._session.begin():
                     raw_result = registered_handler.execute(context, parameters)
-        except ApplicationError:
+        except ApplicationError as exc:
+            self._mark_failed_execution(
+                repository=repository,
+                execution_id=execution_id,
+                error_code=exc.code,
+                error_message=exc.message,
+            )
             raise
         except Exception as exc:
+            self._mark_failed_execution(
+                repository=repository,
+                execution_id=execution_id,
+                error_code="ACTION_EXECUTION_FAILED",
+                error_message=f"Action '{action_name}' failed during execution.",
+            )
             raise ActionExecutionFailedError(action_name) from exc
 
-        result = self._validate_output(
-            action_name=action_name,
-            output_model=registered_handler.output_model,
-            raw_result=raw_result,
-        )
+        try:
+            result = self._validate_output(
+                action_name=action_name,
+                output_model=registered_handler.output_model,
+                raw_result=raw_result,
+            )
+            self._mark_succeeded_execution(
+                repository=repository,
+                execution_id=execution_id,
+                result_payload=result,
+            )
+        except ApplicationError as exc:
+            self._mark_failed_execution(
+                repository=repository,
+                execution_id=execution_id,
+                error_code=exc.code,
+                error_message=exc.message,
+            )
+            raise
         return ExecutedAction(
             payload=ActionExecutionResponse(
                 actionName=action_name,
@@ -312,6 +351,109 @@ class ActionEngine:
             parent_action_key=parent_action_name,
             parent_execution_id=parent_execution_id,
         )
+
+    def _create_started_execution(
+        self,
+        *,
+        repository: ActionExecutionRepository,
+        execution_id: str,
+        action_name: str,
+        invocation_mode: Literal["external", "child"],
+        parent_execution_id: str | None,
+        actor: ActorContext,
+        reason: str | None,
+        started_at: datetime,
+    ) -> None:
+        if self._session.in_transaction():
+            repository.create_started(
+                execution_id=execution_id,
+                action_type=action_name,
+                action_version=self._registry.ontology.version,
+                invocation_mode=self._resolve_invocation_mode(invocation_mode),
+                parent_execution_id=parent_execution_id,
+                actor_id=actor.actor_id,
+                actor_role=actor.roles[0] if actor.roles else "",
+                reason=reason,
+                started_at=started_at,
+            )
+            return
+        with self._session.begin():
+            repository.create_started(
+                execution_id=execution_id,
+                action_type=action_name,
+                action_version=self._registry.ontology.version,
+                invocation_mode=self._resolve_invocation_mode(invocation_mode),
+                parent_execution_id=parent_execution_id,
+                actor_id=actor.actor_id,
+                actor_role=actor.roles[0] if actor.roles else "",
+                reason=reason,
+                started_at=started_at,
+            )
+
+    def _mark_succeeded_execution(
+        self,
+        *,
+        repository: ActionExecutionRepository,
+        execution_id: str,
+        result_payload: BaseModel,
+    ) -> None:
+        if self._session.in_transaction():
+            repository.mark_succeeded(
+                execution_id=execution_id,
+                completed_at=datetime.now(UTC),
+                result_payload=result_payload.model_dump(mode="json", by_alias=True),
+                affected_objects=[],
+            )
+            return
+        with self._session.begin():
+            repository.mark_succeeded(
+                execution_id=execution_id,
+                completed_at=datetime.now(UTC),
+                result_payload=result_payload.model_dump(mode="json", by_alias=True),
+                affected_objects=[],
+            )
+
+    def _mark_failed_execution(
+        self,
+        *,
+        repository: ActionExecutionRepository,
+        execution_id: str,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        if self._session.in_transaction():
+            repository.mark_failed(
+                execution_id=execution_id,
+                completed_at=datetime.now(UTC),
+                error_code=error_code,
+                error_message=error_message,
+                affected_objects=[],
+            )
+            return
+        with self._session.begin():
+            repository.mark_failed(
+                execution_id=execution_id,
+                completed_at=datetime.now(UTC),
+                error_code=error_code,
+                error_message=error_message,
+                affected_objects=[],
+            )
+
+    @staticmethod
+    def _extract_reason(parameters: BaseModel) -> str | None:
+        reason = getattr(parameters, "reason", None)
+        if not isinstance(reason, str):
+            return None
+        normalized = reason.strip()
+        return normalized or None
+
+    @staticmethod
+    def _resolve_invocation_mode(
+        invocation_mode: Literal["external", "child"],
+    ) -> ActionExecutionInvocationMode:
+        if invocation_mode == "child":
+            return ActionExecutionInvocationMode.CHILD_ACTION
+        return ActionExecutionInvocationMode.DIRECT
 
     def _require_registered_handler(
         self,
