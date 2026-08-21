@@ -146,6 +146,17 @@ class AuthorizationDeniedError(ApplicationError):
 
 
 
+class AuthenticationFailedError(ApplicationError):
+    """Safe public authentication error for missing or invalid credentials."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="UNAUTHENTICATED",
+            message="Authentication is required to perform this operation.",
+            status_code=401,
+        )
+
+
 class ObjectTypeNotFoundError(ApplicationError):
 
     """Raised when an ontology object type is not registered."""
@@ -319,4 +330,6 @@ class InvalidRequestError(ApplicationError):
             details=details or {},
 
         )
+
+
 

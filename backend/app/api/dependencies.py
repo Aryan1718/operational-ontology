@@ -6,15 +6,11 @@ from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
 from app.actions.registry import ActionHandlerRegistry
+from app.api.authentication import authenticate_human_api_request
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.functions.registry import FunctionHandlerRegistry
-from app.ontology.actor_context import (
-    ActorContext,
-    ActorType,
-    InvocationSource,
-    OntologyRole,
-)
+from app.ontology.actor_context import ActorContext
 from app.ontology.permission_registry import PermissionRegistry
 from app.ontology.registry import OntologyRegistry
 from app.repositories.object_repository import ObjectRepository
@@ -57,16 +53,15 @@ def get_action_handler_registry(request: Request) -> ActionHandlerRegistry:
     return cast(ActionHandlerRegistry, request.app.state.action_handler_registry)
 
 
-def get_request_actor_context() -> ActorContext:
-    """Provide a narrow trusted actor seam until authentication is implemented."""
-    return ActorContext(
-        actor_id="api-viewer",
-        actor_type=ActorType.HUMAN,
-        roles=(OntologyRole.VIEWER,),
-        invocation_source=InvocationSource.API,
+def get_request_actor_context(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_app_settings)],
+) -> ActorContext:
+    """Authenticate the caller and build the trusted human API actor context."""
+    return authenticate_human_api_request(
+        authorization_header=request.headers.get("Authorization"),
+        settings=settings,
     )
-
-
 def get_object_runtime(
     request: Request,
     session: DbSessionDependency,
@@ -123,3 +118,7 @@ def get_action_engine(
         function_handler_registry=get_function_handler_registry(request),
         session=session,
     )
+
+
+
+

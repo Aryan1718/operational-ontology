@@ -27,6 +27,11 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000"],
         alias="BACKEND_CORS_ORIGINS",
     )
+    api_auth_enabled: bool = Field(default=True, alias="API_AUTH_ENABLED")
+    api_jwt_secret: str | None = Field(default=None, alias="API_JWT_SECRET")
+    api_jwt_algorithm: str = Field(default="HS256", alias="API_JWT_ALGORITHM")
+    api_jwt_issuer: str | None = Field(default="ontology-api", alias="API_JWT_ISSUER")
+    api_jwt_audience: str | None = Field(default="ontology-api-clients", alias="API_JWT_AUDIENCE")
     mcp_remote_enabled: bool = Field(default=False, alias="MCP_REMOTE_ENABLED")
     mcp_server_url: str | None = Field(default=None, alias="MCP_SERVER_URL")
     mcp_token_audience: str | None = Field(default=None, alias="MCP_TOKEN_AUDIENCE")
@@ -108,3 +113,4 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached settings for process-wide reuse."""
     return Settings()
+

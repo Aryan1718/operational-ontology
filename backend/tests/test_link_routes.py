@@ -8,7 +8,7 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_link_runtime
+from app.api.dependencies import get_link_runtime, get_request_actor_context
 from app.core.exceptions import InvalidOntologyMappingError, LinkNotFoundError
 from app.db.seed import _seed_uuid
 from app.main import create_application
@@ -1109,3 +1109,4 @@ def test_aggregate_link_route_returns_missing_source_object_error(
             "objectId": "S-DOES-NOT-EXIST",
         },
     }
+
