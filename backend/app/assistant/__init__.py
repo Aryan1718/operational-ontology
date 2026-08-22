@@ -1,1 +1,2 @@
-"""Future in-application assistant package."""
+"""Assistant backend package."""
+

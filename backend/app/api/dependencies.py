@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.actions.registry import ActionHandlerRegistry
 from app.api.authentication import authenticate_human_api_request
+from app.assistant.runner import UnavailableAssistantRunner
+from app.assistant.service import AssistantService
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.functions.registry import FunctionHandlerRegistry
@@ -62,6 +64,20 @@ def get_request_actor_context(
         authorization_header=request.headers.get("Authorization"),
         settings=settings,
     )
+
+
+def get_assistant_service(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_app_settings)],
+) -> AssistantService:
+    """Provide the assistant orchestration service."""
+    return AssistantService(
+        settings=settings,
+        mcp_server=request.app.state.mcp_server,
+        runner=UnavailableAssistantRunner(),
+    )
+
+
 def get_object_runtime(
     request: Request,
     session: DbSessionDependency,
@@ -118,7 +134,3 @@ def get_action_engine(
         function_handler_registry=get_function_handler_registry(request),
         session=session,
     )
-
-
-
-

@@ -43,6 +43,13 @@ class Settings(BaseSettings):
         default="ontology-assistant",
         alias="MCP_DEV_ACTOR_ID",
     )
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    ai_model: str = Field(default="gpt-5-mini", alias="AI_MODEL")
+    ai_max_tool_calls: int = Field(default=12, alias="AI_MAX_TOOL_CALLS", ge=1, le=50)
+    ai_max_history_messages: int = Field(default=20, alias="AI_MAX_HISTORY_MESSAGES", ge=1, le=100)
+    ai_max_result_items: int = Field(default=20, alias="AI_MAX_RESULT_ITEMS", ge=1, le=100)
+    ai_run_timeout_seconds: int = Field(default=30, alias="AI_RUN_TIMEOUT_SECONDS", ge=1, le=300)
+    ai_tracing_enabled: bool = Field(default=False, alias="AI_TRACING_ENABLED")
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -113,4 +120,3 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached settings for process-wide reuse."""
     return Settings()
-
