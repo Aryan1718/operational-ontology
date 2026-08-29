@@ -10,7 +10,14 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+)
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import AuthenticationFailedError
@@ -42,6 +49,14 @@ class HumanApiTokenClaims(BaseModel):
     aud: str | list[str] | None = None
     nbf: int | None = None
     iat: int | None = None
+    actor_type_claim: ActorType | None = Field(
+        default=None,
+        validation_alias=AliasChoices("actorType", "actor_type"),
+    )
+    invocation_source_claim: InvocationSource | None = Field(
+        default=None,
+        validation_alias=AliasChoices("invocationSource", "invocation_source"),
+    )
 
     @field_validator("roles", mode="before")
     @classmethod
@@ -51,16 +66,39 @@ class HumanApiTokenClaims(BaseModel):
         roles: list[OntologyRole] = []
         for item in value:
             if not isinstance(item, str):
-                continue
+                raise ValueError("roles must contain only role strings.")
             try:
                 role = OntologyRole(item)
             except ValueError:
-                continue
+                raise ValueError(
+                    "roles must contain only known ontology roles."
+                ) from None
+            if role not in _SUPPORTED_HUMAN_ROLES:
+                raise ValueError("roles must contain only supported human API roles.")
             if role in _SUPPORTED_HUMAN_ROLES and role not in roles:
                 roles.append(role)
         if not roles:
             raise ValueError("At least one supported human role is required.")
         return tuple(roles)
+
+    @field_validator("actor_type_claim")
+    @classmethod
+    def validate_actor_type_claim(cls, value: ActorType | None) -> ActorType | None:
+        if value is not None and value is not ActorType.HUMAN:
+            raise ValueError("Human API tokens cannot assert non-human actor types.")
+        return value
+
+    @field_validator("invocation_source_claim")
+    @classmethod
+    def validate_invocation_source_claim(
+        cls,
+        value: InvocationSource | None,
+    ) -> InvocationSource | None:
+        if value is not None and value is not InvocationSource.API:
+            raise ValueError(
+                "Human API tokens cannot assert non-API invocation sources."
+            )
+        return value
 
 
 class _JwtHeader(BaseModel):
@@ -119,7 +157,9 @@ def validate_human_api_token(
         raise AuthenticationFailedError()
 
     try:
-        claims = HumanApiTokenClaims.model_validate_json(_decode_segment(payload_segment))
+        claims = HumanApiTokenClaims.model_validate_json(
+            _decode_segment(payload_segment)
+        )
     except ValidationError as exc:
         raise AuthenticationFailedError() from exc
     current_timestamp = int((now or datetime.now(UTC)).timestamp())
@@ -149,10 +189,15 @@ def create_human_api_token(
     """Create a deterministic signed JWT for development and test use."""
     if not settings.api_jwt_secret:
         raise ValueError("API_JWT_SECRET must be configured to create a token.")
+    unsupported_roles = tuple(
+        role for role in roles if role not in _SUPPORTED_HUMAN_ROLES
+    )
+    if unsupported_roles:
+        raise ValueError("Human API tokens can only be created for human API roles.")
     issued = issued_at or datetime.now(UTC)
     payload: dict[str, Any] = {
         "sub": subject,
-        "roles": [role.value for role in roles if role in _SUPPORTED_HUMAN_ROLES],
+        "roles": [role.value for role in roles],
         "exp": int(expires_at.timestamp()),
         "iat": int(issued.timestamp()),
     }
@@ -245,3 +290,4 @@ def _matches_audience(
     if isinstance(token_audience, str):
         return token_audience == expected_audience
     return expected_audience in token_audience
+
