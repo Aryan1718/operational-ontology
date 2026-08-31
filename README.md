@@ -48,6 +48,10 @@ Supplier delay detected
 -> AI explains the recommendation and result
 ```
 
+<p align="center">
+  <img src="docs/images/supply-chain-reference-scenario-diagram.png" alt="Supply-chain reference scenario diagram" width="900">
+</p>
+
 The important idea is that operational data is not exposed only as tables and generic CRUD endpoints. The ontology defines what objects mean, how they relate, what can be calculated, who can act, and which changes must be governed.
 
 ## Ontology Model
@@ -84,6 +88,10 @@ Next.js frontend
 MCP / AI layer
   exposes approved ontology capabilities without allowing autonomous critical writes
 ```
+
+<p align="center">
+  <img src="docs/images/implementation-architecture-diagram.png" alt="Implementation architecture diagram" width="900">
+</p>
 
 > [!NOTE]
 > Important writes should go through governed action routes. The system should not become unrestricted operational CRUD such as `PATCH /inventory/:id`.
