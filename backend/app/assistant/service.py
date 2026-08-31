@@ -11,23 +11,36 @@ from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP
 
-from app.assistant.events import AssistantCreatedObject, AssistantEvent, AssistantEvidence
+from app.assistant.events import (
+    AssistantCreatedObject,
+    AssistantEvent,
+    AssistantEvidence,
+)
 from app.assistant.instructions import build_system_instructions
 from app.assistant.intent import allows_draft_plan_creation, requests_human_only_action
 from app.assistant.run_context import AssistantRunContext
 from app.assistant.runner import AssistantRunner
 from app.assistant.schemas import AssistantChatRequest
 from app.core.config import Settings
-from app.ontology.actor_context import ActorContext, ActorType, InvocationSource, OntologyRole
+from app.ontology.actor_context import (
+    ActorContext,
+    ActorType,
+    InvocationSource,
+    OntologyRole,
+)
 
 _HUMAN_ONLY_MESSAGE = "This operation requires the governed human workflow."
 _TOOL_LABELS = {
     "searchObjects": "Searching ontology objects",
     "getObject": "Loading object details",
     "getLinkedObjects": "Inspecting relationships",
+    "findImpactedParts": "Finding impacted parts",
+    "findImpactedProducts": "Finding impacted products",
     "findImpactedOrders": "Finding impacted orders",
     "calculateStockoutRisk": "Calculating stockout risk",
+    "getInventoryAvailability": "Checking inventory availability",
     "findAlternativeWarehouses": "Checking alternative warehouses",
+    "findExpeditablePurchaseOrders": "Checking expeditable purchase orders",
     "rankImpactedOrders": "Ranking impacted orders",
     "recommendMitigationPlan": "Evaluating mitigation options",
     "generateMitigationPlan": "Creating draft mitigation plan",
@@ -77,6 +90,7 @@ class AssistantService:
                     data={
                         "runId": run_context.run_id,
                         "conversationId": run_context.conversation_id,
+                        "requestId": run_context.request_id,
                         "message": _HUMAN_ONLY_MESSAGE,
                         "evidence": self._context_evidence(request),
                         "createdObjects": [],
@@ -104,14 +118,31 @@ class AssistantService:
                         message_parts.append(str(event.data.get("delta", "")))
                     elif event.event == "tool.started":
                         tool_calls += 1
+                        if tool_calls > self.settings.ai_max_tool_calls:
+                            yield self._encode_sse(
+                                self._failed_event(
+                                    run_context,
+                                    "ASSISTANT_TOOL_LIMIT_EXCEEDED",
+                                )
+                            )
+                            return
                     elif event.event == "evidence.added" and "evidence" in event.data:
-                        evidence = AssistantEvidence.model_validate(event.data["evidence"])
-                        evidence_by_key[(evidence.object_type, evidence.object_id)] = evidence
-                    elif event.event == "tool.completed" and "createdObject" in event.data:
+                        evidence = AssistantEvidence.model_validate(
+                            event.data["evidence"]
+                        )
+                        evidence_by_key[(evidence.object_type, evidence.object_id)] = (
+                            evidence
+                        )
+                    elif (
+                        event.event == "tool.completed"
+                        and "createdObject" in event.data
+                    ):
                         created_object = AssistantCreatedObject.model_validate(
                             event.data["createdObject"]
                         )
-                        created_objects_by_key[(created_object.object_type, created_object.object_id)] = created_object
+                        created_objects_by_key[
+                            (created_object.object_type, created_object.object_id)
+                        ] = created_object
                     elif event.event == "run.failed":
                         yield self._encode_sse(event)
                         return
@@ -120,7 +151,9 @@ class AssistantService:
             yield self._encode_sse(self._failed_event(run_context, "ASSISTANT_TIMEOUT"))
             return
         except Exception:
-            yield self._encode_sse(self._failed_event(run_context, "ASSISTANT_RUN_FAILED"))
+            yield self._encode_sse(
+                self._failed_event(run_context, "ASSISTANT_RUN_FAILED")
+            )
             return
 
         yield self._encode_sse(
@@ -129,9 +162,16 @@ class AssistantService:
                 data={
                     "runId": run_context.run_id,
                     "conversationId": run_context.conversation_id,
+                    "requestId": run_context.request_id,
                     "message": "".join(message_parts),
-                    "evidence": [item.model_dump(mode="json", by_alias=True) for item in evidence_by_key.values()],
-                    "createdObjects": [item.model_dump(mode="json", by_alias=True) for item in created_objects_by_key.values()],
+                    "evidence": [
+                        item.model_dump(mode="json", by_alias=True)
+                        for item in evidence_by_key.values()
+                    ],
+                    "createdObjects": [
+                        item.model_dump(mode="json", by_alias=True)
+                        for item in created_objects_by_key.values()
+                    ],
                     "usage": {"toolCalls": tool_calls},
                 },
             )
@@ -163,7 +203,11 @@ class AssistantService:
         tool_names = [tool.name for tool in tools]
         if allows_draft_plan_creation(current_message):
             return tool_names
-        return [tool_name for tool_name in tool_names if tool_name != "generateMitigationPlan"]
+        return [
+            tool_name
+            for tool_name in tool_names
+            if tool_name != "generateMitigationPlan"
+        ]
 
     def _normalize_event(
         self,
@@ -172,6 +216,7 @@ class AssistantService:
     ) -> AssistantEvent:
         data = dict(event.data)
         data.setdefault("runId", run_context.run_id)
+        data.setdefault("requestId", run_context.request_id)
         if event.event == "tool.started":
             tool_name = str(data.get("toolName", ""))
             data.setdefault("toolCallId", f"tool_{uuid4().hex}")
@@ -180,14 +225,22 @@ class AssistantService:
             data.setdefault("status", "completed")
         return AssistantEvent(event=event.event, data=data)
 
-    def _failed_event(self, run_context: AssistantRunContext, code: str) -> AssistantEvent:
+    def _failed_event(
+        self, run_context: AssistantRunContext, code: str
+    ) -> AssistantEvent:
         message = "The assistant could not complete the request."
         if code == "ASSISTANT_TIMEOUT":
             message = "The assistant timed out before completing the request."
+        elif code == "ASSISTANT_TOOL_LIMIT_EXCEEDED":
+            message = (
+                "The assistant reached the configured tool-call limit before "
+                "completing the request."
+            )
         return AssistantEvent(
             event="run.failed",
             data={
                 "runId": run_context.run_id,
+                "conversationId": run_context.conversation_id,
                 "requestId": run_context.request_id,
                 "error": {"code": code, "message": message},
             },
@@ -200,8 +253,14 @@ class AssistantService:
             AssistantEvidence(
                 objectType=request.context_object.object_type,
                 objectId=request.context_object.object_id,
-                title=f"{request.context_object.object_type} {request.context_object.object_id}",
-                href=f"/objects/{request.context_object.object_type}/{request.context_object.object_id}",
+                title=(
+                    f"{request.context_object.object_type} "
+                    f"{request.context_object.object_id}"
+                ),
+                href=(
+                    f"/objects/{request.context_object.object_type}/"
+                    f"{request.context_object.object_id}"
+                ),
             ).model_dump(mode="json", by_alias=True)
         ]
 

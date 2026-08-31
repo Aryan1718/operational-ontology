@@ -31,7 +31,9 @@ class Settings(BaseSettings):
     api_jwt_secret: str | None = Field(default=None, alias="API_JWT_SECRET")
     api_jwt_algorithm: str = Field(default="HS256", alias="API_JWT_ALGORITHM")
     api_jwt_issuer: str | None = Field(default="ontology-api", alias="API_JWT_ISSUER")
-    api_jwt_audience: str | None = Field(default="ontology-api-clients", alias="API_JWT_AUDIENCE")
+    api_jwt_audience: str | None = Field(
+        default="ontology-api-clients", alias="API_JWT_AUDIENCE"
+    )
     mcp_remote_enabled: bool = Field(default=False, alias="MCP_REMOTE_ENABLED")
     mcp_server_url: str | None = Field(default=None, alias="MCP_SERVER_URL")
     mcp_token_audience: str | None = Field(default=None, alias="MCP_TOKEN_AUDIENCE")
@@ -46,9 +48,21 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     ai_model: str = Field(default="gpt-5-mini", alias="AI_MODEL")
     ai_max_tool_calls: int = Field(default=12, alias="AI_MAX_TOOL_CALLS", ge=1, le=50)
-    ai_max_history_messages: int = Field(default=20, alias="AI_MAX_HISTORY_MESSAGES", ge=1, le=100)
-    ai_max_result_items: int = Field(default=20, alias="AI_MAX_RESULT_ITEMS", ge=1, le=100)
-    ai_run_timeout_seconds: int = Field(default=30, alias="AI_RUN_TIMEOUT_SECONDS", ge=1, le=300)
+    ai_max_history_messages: int = Field(
+        default=12,
+        alias="AI_MAX_HISTORY_MESSAGES",
+        ge=1,
+        le=100,
+    )
+    ai_max_result_items: int = Field(
+        default=50,
+        alias="AI_MAX_RESULT_ITEMS",
+        ge=1,
+        le=100,
+    )
+    ai_run_timeout_seconds: int = Field(
+        default=30, alias="AI_RUN_TIMEOUT_SECONDS", ge=1, le=300
+    )
     ai_tracing_enabled: bool = Field(default=False, alias="AI_TRACING_ENABLED")
 
     model_config = SettingsConfigDict(

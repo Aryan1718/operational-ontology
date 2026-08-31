@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.actions.registry import ActionHandlerRegistry
 from app.api.authentication import authenticate_human_api_request
-from app.assistant.runner import UnavailableAssistantRunner
+from app.assistant.runner import OpenAIAssistantRunner
 from app.assistant.service import AssistantService
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
@@ -74,7 +74,10 @@ def get_assistant_service(
     return AssistantService(
         settings=settings,
         mcp_server=request.app.state.mcp_server,
-        runner=UnavailableAssistantRunner(),
+        runner=OpenAIAssistantRunner(
+            settings=settings,
+            mcp_server=request.app.state.mcp_server,
+        ),
     )
 
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 
-
 _CREATE_DRAFT_PATTERNS = (
     re.compile(r"\bcreate\b.*\b(draft )?mitigation plan\b", re.IGNORECASE),
     re.compile(r"\bgenerate\b.*\b(draft )?mitigation plan\b", re.IGNORECASE),

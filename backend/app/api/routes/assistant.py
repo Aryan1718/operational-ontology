@@ -27,12 +27,27 @@ async def chat(
     assistant_service: AssistantServiceDependency,
 ) -> StreamingResponse:
     """Stream normalized assistant events over SSE."""
-    return StreamingResponse(
-        assistant_service.stream_chat(
+
+    async def event_stream():
+        stream = assistant_service.stream_chat(
             request=assistant_request,
             human_actor=actor,
             request_id=get_request_id(request),
-        ),
+        )
+        try:
+            async for chunk in stream:
+                if await request.is_disconnected():
+                    break
+                yield chunk
+        finally:
+            await stream.aclose()
+
+    return StreamingResponse(
+        event_stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

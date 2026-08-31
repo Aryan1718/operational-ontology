@@ -11,7 +11,8 @@ requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.14.0",
   "fastapi>=0.115.0",
-  "mcp==1.12.0",
+  "mcp>=1.19.0,<2",
+  "openai-agents>=0.4.0",
   "PyYAML>=6.0.2",
   "psycopg[binary]>=3.2.0",
   "pydantic-settings>=2.6.0",

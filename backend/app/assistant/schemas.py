@@ -6,9 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 MAX_MESSAGE_LENGTH = 4_000
-MAX_HISTORY_MESSAGES = 20
+MAX_HISTORY_MESSAGES = 12
 MAX_HISTORY_MESSAGE_LENGTH = 4_000
 
 
@@ -30,7 +29,7 @@ class AssistantContextObject(BaseModel):
 class AssistantHistoryMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    role: Literal["user", "assistant", "tool"]
+    role: Literal["user", "assistant"]
     message: str = Field(min_length=1, max_length=MAX_HISTORY_MESSAGE_LENGTH)
 
     @field_validator("message")
@@ -45,10 +44,14 @@ class AssistantHistoryMessage(BaseModel):
 class AssistantChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    conversation_id: str | None = Field(default=None, alias="conversationId", max_length=120)
+    conversation_id: str | None = Field(
+        default=None, alias="conversationId", max_length=120
+    )
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_LENGTH)
     history: list[AssistantHistoryMessage] = Field(default_factory=list)
-    context_object: AssistantContextObject | None = Field(default=None, alias="contextObject")
+    context_object: AssistantContextObject | None = Field(
+        default=None, alias="contextObject"
+    )
 
     @field_validator("conversation_id")
     @classmethod
