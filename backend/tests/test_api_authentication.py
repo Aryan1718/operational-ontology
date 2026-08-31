@@ -12,6 +12,7 @@ from app.api.authentication import (
 )
 from app.api.dependencies import get_function_engine
 from app.core.config import Settings, get_settings
+from app.core.exceptions import AuthenticationFailedError
 from app.main import create_application
 from app.mcp.auth import HttpMcpIdentityResolver
 from app.ontology.actor_context import (
@@ -105,6 +106,18 @@ def test_malformed_bearer_credentials_return_401(
     assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
+def test_malformed_jwt_returns_401(monkeypatch: pytest.MonkeyPatch) -> None:
+    with _protected_client(monkeypatch) as client:
+        response = client.post(
+            "/api/v1/functions/getInventoryAvailability/execute",
+            headers={"Authorization": "Bearer not-a-jwt"},
+            json={"parameters": {"partId": "PART-B"}},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
 def test_invalid_signature_returns_401(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _configure_auth_settings(monkeypatch)
     token = _build_token(
@@ -186,6 +199,27 @@ def test_valid_planner_token_creates_human_actor(
     assert actor.invocation_source is InvocationSource.API
 
 
+def test_valid_admin_token_creates_human_actor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _configure_auth_settings(monkeypatch)
+    actor = authenticate_human_api_request(
+        authorization_header=build_bearer_authorization_header(
+            _build_token(
+                settings=settings,
+                subject="admin-001",
+                roles=(OntologyRole.ADMIN,),
+            )
+        ),
+        settings=settings,
+    )
+
+    assert actor.actor_id == "admin-001"
+    assert actor.actor_type is ActorType.HUMAN
+    assert actor.roles == (OntologyRole.ADMIN,)
+    assert actor.invocation_source is InvocationSource.API
+
+
 def test_actor_id_comes_from_validated_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -204,27 +238,60 @@ def test_actor_id_comes_from_validated_credentials(
     assert actor.actor_id == "planner-002"
 
 
-def test_human_token_ignores_ai_like_claims(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_human_token_rejects_ai_actor_type_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     settings = _configure_auth_settings(monkeypatch)
-    actor = authenticate_human_api_request(
-        authorization_header=build_bearer_authorization_header(
-            _build_token(
-                settings=settings,
-                subject="planner-001",
-                roles=(OntologyRole.PLANNER,),
-                extra_claims={
-                    "actorType": "ai_agent",
-                    "invocationSource": "mcp",
-                    "trustedExecutionContext": True,
-                },
-            )
-        ),
+    token = _build_token(
         settings=settings,
+        subject="planner-001",
+        roles=(OntologyRole.PLANNER,),
+        extra_claims={"actorType": "ai_agent"},
     )
 
-    assert actor.actor_type is ActorType.HUMAN
-    assert actor.roles == (OntologyRole.PLANNER,)
-    assert actor.invocation_source is InvocationSource.API
+    with pytest.raises(AuthenticationFailedError):
+        authenticate_human_api_request(
+            authorization_header=build_bearer_authorization_header(token),
+            settings=settings,
+        )
+
+
+def test_human_token_rejects_mcp_invocation_source_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _configure_auth_settings(monkeypatch)
+    token = _build_token(
+        settings=settings,
+        subject="planner-001",
+        roles=(OntologyRole.PLANNER,),
+        extra_claims={"invocationSource": "mcp"},
+    )
+
+    with pytest.raises(AuthenticationFailedError):
+        authenticate_human_api_request(
+            authorization_header=build_bearer_authorization_header(token),
+            settings=settings,
+        )
+
+
+def test_unknown_role_returns_401(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _configure_auth_settings(monkeypatch)
+    token = _build_token(
+        settings=settings,
+        subject="viewer-001",
+        roles=(OntologyRole.VIEWER,),
+        extra_claims={"roles": ["Viewer", "SuperAdmin"]},
+    )
+
+    with _protected_client(monkeypatch) as client:
+        response = client.post(
+            "/api/v1/functions/getInventoryAvailability/execute",
+            headers={"Authorization": build_bearer_authorization_header(token)},
+            json={"parameters": {"partId": "PART-B"}},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHENTICATED"
 
 
 def test_human_token_cannot_authenticate_as_ai_agent(
@@ -234,13 +301,27 @@ def test_human_token_cannot_authenticate_as_ai_agent(
     token = _build_token(
         settings=settings,
         subject="fake-ai",
-        roles=(OntologyRole.AI_AGENT,),
+        roles=(OntologyRole.VIEWER,),
+        extra_claims={"roles": ["AIAgent"]},
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(AuthenticationFailedError):
         authenticate_human_api_request(
             authorization_header=build_bearer_authorization_header(token),
             settings=settings,
+        )
+
+
+def test_human_token_helper_rejects_ai_agent_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = _configure_auth_settings(monkeypatch)
+
+    with pytest.raises(ValueError):
+        _build_token(
+            settings=settings,
+            subject="fake-ai",
+            roles=(OntologyRole.AI_AGENT,),
         )
 
 
@@ -306,3 +387,4 @@ def test_mcp_ai_normalization_remains_unchanged() -> None:
     assert actor.actor_type is ActorType.AI_AGENT
     assert actor.roles == (OntologyRole.AI_AGENT,)
     assert actor.invocation_source is InvocationSource.MCP
+
