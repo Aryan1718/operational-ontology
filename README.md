@@ -1,12 +1,35 @@
-# Ontology-Driven Operational System Reference Implementation
+# Ontology-Driven Operations Reference
 
-This repository is an independent open-source reference implementation for an ontology-driven operational system focused on supply-chain disruption response.
+An independent reference implementation of a lightweight operational ontology inspired by Palantir Foundry Ontology concepts.
 
-It explores how raw operational data can be modeled as connected business objects, typed properties, governed actions, permissions, audit history, and later safe AI-accessible tools. The design is inspired by publicly documented ontology concepts, but this repository is not affiliated with, endorsed by, or integrated with Palantir.
+This repository demonstrates how supply-chain data can be modeled as connected business objects with typed properties, relationships, read-only functions, governed actions, permissions, execution evidence, audit history, and safe AI-accessible tools.
 
-## What This Repository Is For
+> [!IMPORTANT]
+> This is not a Palantir product, clone, integration, or endorsed implementation. Palantir Foundry Ontology is used only as conceptual inspiration for building a smaller open-source operational layer.
 
-The project is meant to demonstrate a narrow vertical slice of this workflow:
+## Reference Links
+
+Conceptual inputs:
+
+- [Palantir Foundry Ontology overview](https://www.palantir.com/docs/foundry/ontology/overview/)
+- [Palantir Ontology core concepts](https://www.palantir.com/docs/foundry/ontology/core-concepts/)
+- [Palantir Ontology system architecture](https://www.palantir.com/docs/foundry/architecture-center/ontology-system/)
+- [Palantir Action Types overview](https://www.palantir.com/docs/foundry/action-types/overview/)
+- [Palantir Ontology MCP overview](https://www.palantir.com/docs/foundry/ontology-mcp/overview/)
+- [Model Context Protocol architecture](https://modelcontextprotocol.io/docs/learn/architecture)
+- [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
+
+Project context:
+
+- [agent.md](agent.md)
+- [Ontology implementation context](docs/operational-ontology_ontology_implementation_context.md)
+- [Backend implementation context](docs/operational-ontology_backend_implementation_context.md)
+- [Database context](docs/operational-ontology_database_context.md)
+- [AI and MCP integration context](docs/operational-ontology_ai_mcp_integration_design_context.md)
+
+## What This Implements
+
+The project focuses on a supply-chain disruption response workflow:
 
 ```text
 Supplier delay detected
@@ -17,194 +40,172 @@ Supplier delay detected
 -> available Inventory checked
 -> mitigation options generated
 -> MitigationPlan created
--> planner submits the plan
--> operations manager approves or rejects the plan
+-> Planner submits the plan
+-> Operations Manager approves or rejects the plan
 -> approved mitigation steps execute
 -> operational records change transactionally
--> every action and affected object is audited
+-> actions and affected objects are audited
 -> AI explains the recommendation and result
 ```
 
-The main value is the ontology and operational layer, not a generic CRUD application.
+The important idea is that operational data is not exposed only as tables and generic CRUD endpoints. The ontology defines what objects mean, how they relate, what can be calculated, who can act, and which changes must be governed.
 
-## Core Principles
+## Ontology Model
 
-- PostgreSQL stores operational facts.
-- Ontology metadata defines business meaning, relationships, functions, actions, and permissions.
-- Read-only functions derive operational insight.
-- Governed actions are the only path for important writes.
-- Audit history records what changed, who changed it, and why.
-- AI access must use approved ontology capabilities and must not bypass human approval.
+The ontology layer describes:
 
-## Current Status
+- business object types such as `Supplier`, `Part`, `Product`, `Warehouse`, `InventoryPosition`, `CustomerOrder`, `RiskEvent`, and `MitigationPlan`
+- stored properties mapped to PostgreSQL tables and columns
+- relationships between operational objects
+- read-only functions for impact analysis, inventory availability, stockout risk, order ranking, and mitigation recommendation
+- governed actions such as `createRiskEvent`, `generateMitigationPlan`, `approveMitigationPlan`, `reallocateInventory`, and `expeditePurchaseOrder`
+- role-based permissions for `Viewer`, `Planner`, `OperationsManager`, `Admin`, and restricted `AIAgent`
 
-The repository currently provides the project skeleton and development wiring for the backend, frontend, and local database. The full supply-chain workflow is documented in the repository context files but is not yet implemented end to end.
+The active ontology definition lives at:
 
-Implemented now:
+- [backend/app/ontology/ontology.yaml](backend/app/ontology/ontology.yaml)
 
-- FastAPI backend startup and `GET /health`
-- environment-based backend configuration
-- Next.js application shell
-- centralized frontend API client pattern
-- Docker Compose setup for `postgres`, `backend`, and `frontend`
-- local setup scripts and baseline tooling
+## Architecture
 
-Planned next layers:
+```text
+PostgreSQL
+  stores operational records, action executions, and audit evidence
 
-- PostgreSQL-backed operational schema and deterministic seed data
-- ontology metadata loader, validator, and immutable registry
-- read-only ontology functions
-- governed actions with authorization, idempotency, transactions, and audit
-- read-only Ontology Manager
-- MCP-based AI integration with `AIAgent` restrictions
+Ontology YAML
+  declares objects, links, functions, actions, roles, and permissions
 
-## Technology Stack
+FastAPI backend
+  loads and validates ontology metadata, enforces authorization,
+  executes read-only functions, dispatches governed actions, and records audit data
 
-Backend:
+Next.js frontend
+  provides the Ontology Manager and operational workspace surfaces
+
+MCP / AI layer
+  exposes approved ontology capabilities without allowing autonomous critical writes
+```
+
+> [!NOTE]
+> Important writes should go through governed action routes. The system should not become unrestricted operational CRUD such as `PATCH /inventory/:id`.
+
+## Current Implementation
+
+Implemented repository surfaces include:
+
+- FastAPI application startup with ontology registry loading
+- Pydantic-based ontology metadata validation
+- immutable ontology registry
+- shared authorization service and permission registry
+- object, link, function, action, action-execution, audit-log, assistant, and ontology API route groups
+- registered function and action handler validation at startup
+- PostgreSQL wiring through SQLAlchemy and Alembic
+- deterministic seed command entry point
+- MCP server wiring for approved ontology tools
+- Next.js application shell for the Ontology Manager workspace
+- Docker Compose stack for PostgreSQL, backend, and frontend
+
+The reference implementation is still intended to remain narrow: a complete supplier-delay vertical slice is more valuable than many disconnected dashboard features.
+
+## API Shape
+
+The backend groups ontology behavior under `/api/v1`:
+
+```text
+GET  /health
+
+GET  /api/v1/ontology/...
+POST /api/v1/objects/...
+GET  /api/v1/links/...
+POST /api/v1/functions/...
+POST /api/v1/actions/...
+GET  /api/v1/action-executions/...
+POST /api/v1/audit-logs/...
+POST /api/v1/assistant/...
+```
+
+Function routes are for read-only operational insight. Action routes are for governed state changes with permission checks, validation, execution records, and audit evidence.
+
+## Repository Structure
+
+```text
+backend/         FastAPI backend, ontology runtime, handlers, models, migrations
+frontend/        Next.js Ontology Manager and workspace UI
+docs/            implementation context for each system layer
+infrastructure/  deployment and environment support
+scripts/         setup, development, migration, seed, and test helpers
+tests/           shared end-to-end test scaffolding
+```
+
+## Tech Stack
 
 - Python 3.12+
 - FastAPI
-- Pydantic Settings
+- Pydantic
 - SQLAlchemy
 - Alembic
 - PostgreSQL
 - PyYAML
 - MCP Python SDK
-
-Frontend:
-
 - Next.js 15
 - React 18
 - TypeScript
 - Tailwind CSS
 - TanStack Query
-- React Hook Form
-- Zod
 - React Flow
-
-Testing and tooling:
-
-- pytest
-- Ruff
-- mypy
-- Vitest
-- React Testing Library
-- Playwright
-- Docker Compose
-
-Source references:
-
-- [backend/pyproject.toml](backend/pyproject.toml)
-- [frontend/package.json](frontend/package.json)
-- [docker-compose.yml](docker-compose.yml)
-
-## Architecture Overview
-
-The intended architecture keeps operational data, ontology metadata, runtime behavior, and AI access clearly separated:
-
-```text
-PostgreSQL
-  = operational records and execution history
-
-ontology/ontology.yaml
-  = object types, properties, links, functions, actions, roles, permissions
-
-backend handlers and runtime
-  = validation, authorization, function execution, action execution, audit
-
-frontend
-  = read-only ontology understanding and governed operational workflows
-
-MCP / AI layer
-  = approved read and draft capabilities with human approval preserved
-```
-
-Important boundary:
-
-- important writes should be expressed as governed actions such as `createRiskEvent`, `generateMitigationPlan`, or `approveMitigationPlan`
-- this repository should not collapse into unrestricted endpoint-driven CRUD like `PATCH /inventory/:id`
-
-## Repository Structure
-
-```text
-backend/         FastAPI application and planned ontology runtime
-frontend/        Next.js application
-docs/            implementation context and design documents
-infrastructure/  deployment and environment support files
-scripts/         local setup and helper scripts
-tests/           end-to-end and shared test scaffolding
-```
+- pytest, Ruff, mypy, Vitest, Playwright
 
 ## Getting Started
 
-### Prerequisites
+Prerequisites:
 
 - Python 3.12+
 - Node.js 20+
 - npm
 - Docker and Docker Compose
 
-### Install dependencies
-
-Windows PowerShell:
-
-```powershell
-./scripts/setup.ps1
-```
-
-Shell:
+Install dependencies:
 
 ```bash
 ./scripts/setup.sh
 ```
 
-The setup script installs:
+On Windows PowerShell:
 
-- backend package plus dev dependencies
-- frontend npm dependencies
+```powershell
+./scripts/setup.ps1
+```
 
-### Run locally without Docker
+Run the full local stack:
 
-Start the backend:
+```bash
+docker compose up --build
+```
+
+Run services manually:
 
 ```bash
 cd backend
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Start the frontend in a second shell:
-
 ```bash
 cd frontend
 npm run dev
 ```
 
-Available local endpoints:
+Local URLs:
 
-- frontend: `http://localhost:3000`
-- backend: `http://localhost:8000`
-- health: `http://localhost:8000/health`
-- API docs: `http://localhost:8000/docs`
-
-### Run with Docker
-
-```bash
-docker compose up --build
-```
-
-The compose stack starts:
-
-- `postgres`
-- `backend`
-- `frontend`
-
-Migrations and seed data are not yet run automatically.
+- Frontend: <http://localhost:3000>
+- Backend: <http://localhost:8000>
+- Health: <http://localhost:8000/health>
+- API docs: <http://localhost:8000/docs>
 
 ## Common Commands
 
 From the repository root:
 
 ```bash
+make setup
 make up
 make down
 make logs
@@ -217,55 +218,14 @@ make migrate
 make seed
 ```
 
-Source reference:
+## Implementation Boundaries
 
-- [Makefile](Makefile)
+- PostgreSQL is the source of truth for operational state.
+- Ontology YAML is the source of truth for metadata.
+- Backend handlers contain executable business logic.
+- Functions must remain read-only.
+- Operational writes must go through governed actions.
+- Permissions must be enforced server-side.
+- AI may read, traverse, calculate, recommend, and draft when allowed.
+- AI must not autonomously approve plans, execute plans, move inventory, expedite purchase orders, prioritize shipments, resolve risks, or publish ontology changes.
 
-## Documentation Map
-
-The repository design is defined primarily in the `docs/` context files. Start with these:
-
-- [agent.md](agent.md)
-- [docs/operational-ontology_backend_implementation_context.md](docs/operational-ontology_backend_implementation_context.md)
-- [docs/operational-ontology_frontend_application_design_context.md](docs/operational-ontology_frontend_application_design_context.md)
-- [docs/operational-ontology_lightweight_ontology_manager_implementation_context.md](docs/operational-ontology_lightweight_ontology_manager_implementation_context.md)
-- [docs/operational-ontology_ai_mcp_integration_design_context.md](docs/operational-ontology_ai_mcp_integration_design_context.md)
-- [docs/operational-ontology_ontology_implementation_context.md](docs/operational-ontology_ontology_implementation_context.md)
-- [docs/operational-ontology_database_context.md](docs/operational-ontology_database_context.md)
-- [docs/deterministic_supply_chain_seed_data_implementation_context.md](docs/deterministic_supply_chain_seed_data_implementation_context.md)
-
-These documents define the intended object model, runtime boundaries, action rules, permissions, frontend behavior, and AI safety model.
-
-## External Reference Material
-
-Conceptual ontology references:
-
-- Palantir Ontology overview: <https://www.palantir.com/docs/foundry/ontology/overview/>
-- Palantir Ontology core concepts: <https://www.palantir.com/docs/foundry/ontology/core-concepts/>
-- Palantir Ontology system architecture: <https://www.palantir.com/docs/foundry/architecture-center/ontology-system/>
-- Palantir Action Types overview: <https://www.palantir.com/docs/foundry/action-types/overview/>
-- Palantir Ontology MCP overview: <https://www.palantir.com/docs/foundry/ontology-mcp/overview/>
-
-MCP and agent references:
-
-- Model Context Protocol architecture: <https://modelcontextprotocol.io/docs/learn/architecture>
-- Model Context Protocol Python SDK: <https://github.com/modelcontextprotocol/python-sdk>
-- OpenAI Agents SDK for Python: <https://openai.github.io/openai-agents-python/>
-
-These references are conceptual inputs only. This repository implements its own smaller open-source architecture.
-
-## Contributing
-
-Before making changes:
-
-- read [agent.md](agent.md)
-- read the task-specific context document in `docs/`
-- preserve the ontology, action, permission, and AI boundaries
-- avoid unrelated refactors
-- avoid turning the system into unrestricted operational CRUD
-
-When contributing implementation changes, prefer updating the relevant context documents if repository contracts or paths materially change.
-
-## License
-
-No license file is currently present in the repository. Add one explicitly before treating the project as broadly redistributable.
